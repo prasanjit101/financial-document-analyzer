@@ -2,7 +2,12 @@
 from crewai import Task
 
 from agents import financial_analyst, verifier, investment_advisor, risk_assessor
-from tools import search_tool, FinancialDocumentTool, InvestmentTool, RiskTool
+from tools import (
+    search_tool,
+    read_financial_document_tool,
+    analyze_investment_tool,
+    risk_assessment_tool,
+)
 
 ## Creating a task to help solve user's query
 analyze_financial_document = Task(
@@ -24,9 +29,9 @@ Return a structured analysis including:
 
     agent=financial_analyst,
     tools=[
-        FinancialDocumentTool.read_data_tool,
-        InvestmentTool.analyze_investment_tool,
-        RiskTool.create_risk_assessment_tool,
+        read_financial_document_tool,
+        analyze_investment_tool,
+        risk_assessment_tool,
         # search tool is optional; include for context lookup if needed
         search_tool,
     ],
@@ -48,8 +53,8 @@ Provide a compact overview including:
 
     agent=investment_advisor,
     tools=[
-        FinancialDocumentTool.read_data_tool,
-        InvestmentTool.analyze_investment_tool,
+        read_financial_document_tool,
+        analyze_investment_tool,
     ],
     async_execution=False,
 )
@@ -66,8 +71,8 @@ Return risk score (1-5) and list of key risk factors found in the text.
 
     agent=risk_assessor,
     tools=[
-        FinancialDocumentTool.read_data_tool,
-        RiskTool.create_risk_assessment_tool,
+        read_financial_document_tool,
+        risk_assessment_tool,
     ],
     async_execution=False,
 )
@@ -83,6 +88,6 @@ State whether the document appears financial and list a few detected financial t
 """,
 
     agent=verifier,
-    tools=[FinancialDocumentTool.read_data_tool],
+    tools=[read_financial_document_tool],
     async_execution=False
 )

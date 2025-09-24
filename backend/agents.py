@@ -2,7 +2,12 @@
 from crewai import Agent, LLM
 from config import settings
 
-from tools import search_tool, FinancialDocumentTool, InvestmentTool, RiskTool
+from tools import (
+    search_tool,
+    read_financial_document_tool,
+    analyze_investment_tool,
+    risk_assessment_tool,
+)
 
 ### Loading LLM
 # Use centralized settings for model selection
@@ -25,9 +30,9 @@ financial_analyst = Agent(
     ),
     tools=[
         search_tool,
-        FinancialDocumentTool.read_data_tool,
-        InvestmentTool.analyze_investment_tool,
-        RiskTool.create_risk_assessment_tool,
+        read_financial_document_tool,
+        analyze_investment_tool,
+        risk_assessment_tool,
     ],
     llm=llm,
     max_iter=3,
@@ -50,7 +55,7 @@ verifier = Agent(
     ),
     llm=llm,
     tools=[
-        FinancialDocumentTool.read_data_tool,
+        read_financial_document_tool,
     ],
     max_iter=2,
     max_rpm=30,
@@ -72,8 +77,8 @@ investment_advisor = Agent(
     ),
     llm=llm,
     tools=[
-        FinancialDocumentTool.read_data_tool,
-        InvestmentTool.analyze_investment_tool,
+        read_financial_document_tool,
+        analyze_investment_tool,
         search_tool,
     ],
     max_iter=2,
@@ -96,8 +101,8 @@ risk_assessor = Agent(
     ),
     llm=llm,
     tools=[
-        FinancialDocumentTool.read_data_tool,
-        RiskTool.create_risk_assessment_tool,
+        read_financial_document_tool,
+        risk_assessment_tool,
         search_tool,
     ],
     max_iter=2,

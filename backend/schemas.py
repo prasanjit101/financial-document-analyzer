@@ -6,8 +6,8 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
-class PyObjectId(str):
-    """Simple alias to denote Mongo ObjectId as string in API schemas."""
+# Represent Mongo ObjectId as a plain string for Pydantic v2 compatibility
+PyObjectId = str
 
 
 # Users

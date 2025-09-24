@@ -4,6 +4,7 @@ import logging
 import os
 import uuid
 import asyncio
+from contextlib import asynccontextmanager
 
 from crewai import Crew, Process
 from config import settings
@@ -15,23 +16,23 @@ from repositories import analyses as analyses_repo
 from repositories import audit_logs as audit_repo
 from task import analyze_financial_document as analyze_financial_document_task
 
-app = FastAPI(title="Financial Document Analyzer")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan to manage startup and shutdown."""
+    await init_db(app)
+    logger.info("Application startup complete")
+    try:
+        yield
+    finally:
+        await close_db(app)
+        logger.info("Application shutdown complete")
+
+
+app = FastAPI(title="Financial Document Analyzer", lifespan=lifespan)
 
 # Basic logging setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
-@app.on_event("startup")
-async def _startup() -> None:
-    await init_db(app)
-    logger.info("Application startup complete")
-
-
-@app.on_event("shutdown")
-async def _shutdown() -> None:
-    await close_db(app)
-    logger.info("Application shutdown complete")
 
 # Routers
 try:
@@ -204,4 +205,4 @@ async def get_analysis(analysis_id: str, current_user: User = Depends(get_curren
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host=settings.API_HOST, port=settings.API_PORT, reload=True)
+    uvicorn.run("main:app", host=settings.API_HOST, port=settings.API_PORT, reload=True)
