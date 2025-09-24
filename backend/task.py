@@ -12,7 +12,7 @@ from tools import (
 ## Creating a task to help solve user's query
 analyze_financial_document = Task(
     description="""
-You are to analyze the document at {file_path} in relation to the user's query {query}.
+Analyze the document at {file_path} in relation to the user's query {query}.
 Follow these steps strictly:
 1) Use tools to extract text from the document.
 2) Detect concrete financial metrics mentioned (e.g., revenue, EBITDA, margins, cash flow, assets, liabilities, growth rates) and capture their values and units if present.

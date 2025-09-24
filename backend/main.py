@@ -1,21 +1,15 @@
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Depends, Request
-from typing import Optional
+from fastapi import FastAPI, HTTPException, Depends, Request
+from typing import Optional, Literal
 import logging
-import os
-import uuid
 import asyncio
 from contextlib import asynccontextmanager
 from fastapi.responses import JSONResponse
-
-from crewai import Crew, Process
+from fastapi.exceptions import RequestValidationError
 from config import settings
-from agents import financial_analyst
 from services.auth import get_current_user, User
 from db import init_db, close_db, get_db
 from repositories import analyses as analyses_repo
 from redis_utils import cache_get_json, cache_set_json
-from repositories import audit_logs as audit_repo
-from task import analyze_financial_document as analyze_financial_document_task
 from pylangdb.crewai import init
 
 
@@ -32,10 +26,10 @@ async def lifespan(app: FastAPI):
         logger.info("Application shutdown complete")
 
 
-app = FastAPI(title="Financial Document Analyzer", lifespan=lifespan)
+app = FastAPI(title="Financial Document Analyzer", lifespan=lifespan, debug=settings.APP_ENV == "dev", version="0.1.0")
 
 # Basic logging setup
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO if settings.APP_ENV == "dev" else logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # Log unhandled rejections in asyncio tasks to help diagnose timeouts
@@ -52,8 +46,8 @@ except Exception:
 # Routers
 try:
     from services.auth import router as auth_router
+    from services.documents import router as documents_router
     app.include_router(auth_router)
-    from services.documents import router as documents_router  # Document routes
     app.include_router(documents_router)
 except Exception:
     # Avoid startup failure if auth dependencies are missing in some environments
@@ -65,22 +59,10 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     logger.exception("Unhandled exception")
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
-from fastapi.exceptions import RequestValidationError
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
-def run_crew(query: str, file_path: str="data/sample.pdf"):
-    """To run the whole crew"""
-    financial_crew = Crew(
-        agents=[financial_analyst],
-        tasks=[analyze_financial_document_task],
-        process=Process.sequential,
-    )
-    
-    # Pass query (and file_path for tools that may use it)
-    result = financial_crew.kickoff({'query': query, 'file_path': file_path})
-    return result
 
 @app.get("/")
 async def root():

@@ -11,6 +11,7 @@
                     "auth"
                 ],
                 "summary": "Login",
+                "description": "Login to the system",
                 "operationId": "login_v1_auth_login_post",
                 "requestBody": {
                     "content": {
@@ -50,55 +51,8 @@
                     "auth"
                 ],
                 "summary": "Read Me",
+                "description": "Get the current user",
                 "operationId": "read_me_v1_auth_me_get",
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {}
-                            }
-                        }
-                    }
-                },
-                "security": [
-                    {
-                        "OAuth2PasswordBearer": []
-                    }
-                ]
-            }
-        },
-        "/v1/auth/admin-only": {
-            "get": {
-                "tags": [
-                    "auth"
-                ],
-                "summary": "Admin Only",
-                "operationId": "admin_only_v1_auth_admin_only_get",
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {}
-                            }
-                        }
-                    }
-                },
-                "security": [
-                    {
-                        "OAuth2PasswordBearer": []
-                    }
-                ]
-            }
-        },
-        "/v1/auth/viewer-or-admin": {
-            "get": {
-                "tags": [
-                    "auth"
-                ],
-                "summary": "Viewer Or Admin",
-                "operationId": "viewer_or_admin_v1_auth_viewer_or_admin_get",
                 "responses": {
                     "200": {
                         "description": "Successful Response",

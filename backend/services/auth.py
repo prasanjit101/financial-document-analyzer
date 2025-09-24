@@ -149,7 +149,7 @@ def rate_limiter(key_builder: Optional[Any] = None):
     return dependency
 
 
-@router.post("/login")
+@router.post("/login", description="Login to the system")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     db = get_db()
     user_record = await users_repo.get_by_username(db, form_data.username)
@@ -160,25 +160,9 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     return {"access_token": token, "token_type": "bearer"}
 
 
-@router.get("/me")
+@router.get("/me", description="Get the current user")
 async def read_me(current_user: User = Depends(get_current_user)):
     return current_user
-
-
-@router.get("/admin-only")
-async def admin_only(
-    _: User = Depends(require_role("admin")),
-    __: None = Depends(rate_limiter()),
-):
-    return {"message": "Hello, Admin!"}
-
-
-@router.get("/viewer-or-admin")
-async def viewer_or_admin(
-    user: User = Depends(require_role("viewer")),
-    __: None = Depends(rate_limiter()),
-):
-    return {"message": f"Hello, {user.role.title()}!"}
 
 # Export a rate limiter instance for reuse in other routers
 rate_limit_dependency = rate_limiter()

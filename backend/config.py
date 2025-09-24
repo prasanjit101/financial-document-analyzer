@@ -12,7 +12,7 @@ Design:
 
 from __future__ import annotations
 from functools import lru_cache
-from typing import Optional
+from typing import Optional, Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -31,6 +31,7 @@ class Settings(BaseSettings):
 
     # LLM/model config
     LLM_MODEL: str = Field(default="gemini/gemini-2.5-flash", description="Default LLM model identifier")
+    APP_ENV: Literal["dev", "prod"] = Field(default="dev", description="Default app environment")
 
     GEMINI_API_KEY: Optional[str] = Field(default=None, description="Google Gemini API key")
     GOOGLE_API_KEY: Optional[str] = Field(default=None, description="Alias for Gemini API key; some libs use this name")

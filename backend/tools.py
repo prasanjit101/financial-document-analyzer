@@ -2,19 +2,7 @@
 import os
 from config import settings  # ensures env is loaded centrally
 from typing import Dict, Tuple, Optional
-
-# CrewAI tool base class
-BaseTool = None  # type: ignore
-try:
-    # Primary: CrewAI's built-in BaseTool
-    from crewai.tools import BaseTool  # type: ignore
-except Exception:
-    try:
-        # Fallback: BaseTool from crewai_tools (older examples)
-        from crewai_tools import BaseTool  # type: ignore
-    except Exception:  # pragma: no cover - fallback if not installed
-        BaseTool = None  # type: ignore
-
+from crewai.tools import BaseTool
 try:
     from crewai_tools.tools.serper_dev_tool import SerperDevTool  # type: ignore
 except Exception:
@@ -27,21 +15,15 @@ if SerperDevTool is not None:
     # SerperDevTool already implements the required interface for CrewAI
     search_tool = SerperDevTool()
 else:
-    # Fallback BaseTool to avoid validation errors when crewai_tools isn't installed
-    if BaseTool is not None:
-        class _NoopSearchTool(BaseTool):  # type: ignore
-            name: str = "Search (noop)"
-            description: str = (
-                "No-op search tool used when Serper API is not configured. Returns empty string."
-            )
+    class _NoopSearchTool(BaseTool):  # type: ignore
+        name: str = "Search (noop)"
+        description: str = (
+            "No-op search tool used when Serper API is not configured. Returns empty string."
+        )
 
-            def _run(self, query: str) -> str:  # type: ignore[override]
-                return ""
-        search_tool = _NoopSearchTool()
-    else:
-        # Last-resort: simple function to keep runtime stable; Agents shouldn't import this path
-        def search_tool(_: str) -> str:  # type: ignore
+        def _run(self, query: str) -> str:  # type: ignore[override]
             return ""
+    search_tool = _NoopSearchTool()
 
 ## Creating custom pdf reader tool
 class FinancialDocumentTool():
@@ -85,18 +67,15 @@ class FinancialDocumentTool():
 
         return full_report
 
-# BaseTool wrapper exposing PDF reading as a CrewAI tool
-if BaseTool is not None:
-    class ReadFinancialDocumentTool(BaseTool):  # type: ignore
-        name: str = "Read Financial Document"
-        description: str = (
-            "Extracts text from a PDF at the given file path. Input should be a file path string."
-        )
+class ReadFinancialDocumentTool(BaseTool):  # type: ignore
+    name: str = "Read Financial Document"
+    description: str = (
+        "Extracts text from a PDF at the given file path. Input should be a file path string."
+    )
 
-        def _run(self, path: str = 'data/sample.pdf') -> str:  # type: ignore[override]
-            return FinancialDocumentTool.read_data_tool(path=path)
-    # Export an instance for easy import
-    read_financial_document_tool = ReadFinancialDocumentTool()
+    def _run(self, path: str = 'data/sample.pdf') -> str:  # type: ignore[override]
+        return FinancialDocumentTool.read_data_tool(path=path)
+
 
 ## Creating Investment Analysis Tool
 class InvestmentTool:
@@ -379,16 +358,15 @@ class InvestmentTool:
         return "\n".join(lines)
 
 # BaseTool wrapper exposing investment analysis as a CrewAI tool
-if BaseTool is not None:
-    class AnalyzeInvestmentTool(BaseTool):  # type: ignore
-        name: str = "Analyze Investment"
-        description: str = (
-            "Generates a concise, structured investment overview from extracted financial text. "
-        )
+class AnalyzeInvestmentTool(BaseTool):  # type: ignore
+    name: str = "Analyze Investment"
+    description: str = (
+        "Generates a concise, structured investment overview from extracted financial text. "
+    )
 
-        def _run(self, financial_document_data: str) -> str:  # type: ignore[override]
-            return InvestmentTool.analyze_investment_tool(financial_document_data)
-    analyze_investment_tool = AnalyzeInvestmentTool()
+    def _run(self, financial_document_data: str) -> str:  # type: ignore[override]
+        return InvestmentTool.analyze_investment_tool(financial_document_data)
+
 
 ## Creating Risk Assessment Tool
 class RiskTool:
@@ -486,14 +464,16 @@ class RiskTool:
 
         return "\n".join(summary)
 
-# BaseTool wrapper exposing risk assessment as a CrewAI tool
-if BaseTool is not None:
-    class CreateRiskAssessmentTool(BaseTool):  # type: ignore
-        name: str = "Create Risk Assessment"
-        description: str = (
-            "Generates a concise risk assessment and score from extracted financial text."
-        )
 
-        def _run(self, financial_document_data: str) -> str:  # type: ignore[override]
-            return RiskTool.create_risk_assessment_tool(financial_document_data)
-    risk_assessment_tool = CreateRiskAssessmentTool()
+class CreateRiskAssessmentTool(BaseTool):  # type: ignore
+    name: str = "Create Risk Assessment"
+    description: str = (
+        "Generates a concise risk assessment and score from extracted financial text."
+    )
+
+    def _run(self, financial_document_data: str) -> str:  # type: ignore[override]
+        return RiskTool.create_risk_assessment_tool(financial_document_data)
+
+risk_assessment_tool = CreateRiskAssessmentTool()
+analyze_investment_tool = AnalyzeInvestmentTool()
+read_financial_document_tool = ReadFinancialDocumentTool()

@@ -120,6 +120,7 @@ def enqueue_pdf_job(payload: dict) -> Optional[str]:
         client.expire(job_key, 7 * 24 * 3600)
         return job_id
     except Exception:
+        logger.exception("Error enqueuing job %s", job_id)
         return None
 
 
@@ -140,6 +141,7 @@ def get_job_status(job_id: str) -> Optional[dict[str, Any]]:
                 result[k] = v
         return result
     except Exception:
+        logger.exception("Error getting job status for %s", job_id)
         return None
 
 
@@ -151,6 +153,7 @@ def update_job(job_id: str, **fields: Any) -> None:
         job_key = JOB_KEY_PREFIX + job_id
         client.hset(job_key, mapping={k: json.dumps(v) if isinstance(v, (dict, list)) else str(v) for k, v in fields.items()})
     except Exception:
+        logger.exception("Error updating job %s", job_id)
         pass
 
 
