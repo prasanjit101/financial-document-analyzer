@@ -30,11 +30,10 @@ class Settings(BaseSettings):
     """Typed application settings sourced from environment variables."""
 
     # LLM/model config
-    LLM_MODEL: str = Field(default="openai/gpt-4o-mini", description="Default LLM model identifier")
+    LLM_MODEL: str = Field(default="gemini/gemini-2.5-flash", description="Default LLM model identifier")
 
-    # Common provider API keys (optional; libraries may read directly from env as well)
-    OPENAI_API_KEY: Optional[str] = Field(default=None, description="OpenAI API key")
-    ANTHROPIC_API_KEY: Optional[str] = Field(default=None, description="Anthropic API key")
+    GEMINI_API_KEY: Optional[str] = Field(default=None, description="Google Gemini API key")
+    GOOGLE_API_KEY: Optional[str] = Field(default=None, description="Alias for Gemini API key; some libs use this name")
     SERPER_API_KEY: Optional[str] = Field(default=None, description="Serper.dev API key for web search tool")
 
     # FastAPI server config (optional convenience)
@@ -61,6 +60,16 @@ class Settings(BaseSettings):
     )
     RATE_LIMIT_MAX_REQUESTS: int = Field(
         default=30, description="Default maximum requests per window per identity"
+    )
+
+    # MongoDB
+    MONGODB_URI: str = Field(
+        default="mongodb://localhost:27017",
+        description="MongoDB connection URI",
+    )
+    MONGODB_DB_NAME: str = Field(
+        default="financial_analyzer",
+        description="Default MongoDB database name",
     )
 
     # Settings behavior

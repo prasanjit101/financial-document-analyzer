@@ -9,6 +9,9 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 
 from config import settings
+from db import get_db
+from repositories import users as users_repo
+import logging
 
 try:
     # Authlib provides a JOSE-compliant JWT API
@@ -25,8 +28,6 @@ except Exception:
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-# Simple in-memory users for demo purposes
-# In a real app, replace with a database-backed user model and hashed passwords
 class User(BaseModel):
     username: str
     full_name: Optional[str] = None
@@ -34,20 +35,7 @@ class User(BaseModel):
     disabled: bool = False
 
 
-_USERS: Dict[str, Dict[str, Any]] = {
-    "admin": {
-        "username": "admin",
-        "password": "admin123",  # DO NOT use plaintext in production
-        "full_name": "Admin User",
-        "role": "admin",
-    },
-    "viewer": {
-        "username": "viewer",
-        "password": "viewer123",
-        "full_name": "Viewer User",
-        "role": "viewer",
-    },
-}
+logger = logging.getLogger(__name__)
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -90,10 +78,11 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     username = data.get("sub")
     if not username:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-    raw = _USERS.get(username)
+    db = get_db()
+    raw = await users_repo.get_by_username(db, username)
     if not raw:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-    return User(**raw)
+    return User(username=raw.get("username"), full_name=raw.get("full_name"), role=raw.get("role", "viewer"))
 
 
 def require_role(required: str):
@@ -162,11 +151,12 @@ def rate_limiter(key_builder: Optional[Any] = None):
 
 @router.post("/login")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    user_record = _USERS.get(form_data.username)
-    if not user_record or user_record.get("password") != form_data.password:
+    db = get_db()
+    user_record = await users_repo.get_by_username(db, form_data.username)
+    if not user_record or not users_repo.verify_password(form_data.password, user_record.get("passwordHash", "")):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
 
-    token = issue_access_token(subject=user_record["username"], role=user_record["role"])
+    token = issue_access_token(subject=user_record["username"], role=user_record.get("role", "viewer"))
     return {"access_token": token, "token_type": "bearer"}
 
 
@@ -190,4 +180,29 @@ async def viewer_or_admin(
 ):
     return {"message": f"Hello, {user.role.title()}!"}
 
+
+from schemas import UserCreate
+
+
+@router.post("/register")
+async def register(payload: UserCreate):
+    """Open registration endpoint. Forces role to 'viewer' for simplicity/security."""
+    db = get_db()
+    existing = await users_repo.get_by_username(db, payload.username)
+    if existing:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username already exists")
+
+    created = await users_repo.create_user(
+        db=db,
+        username=payload.username,
+        password=payload.password,
+        full_name=payload.full_name,
+        role="viewer",
+    )
+    logger.info("User registered: %s", created.get("username"))
+    return {
+        "username": created.get("username"),
+        "full_name": created.get("full_name"),
+        "role": created.get("role"),
+    }
 
