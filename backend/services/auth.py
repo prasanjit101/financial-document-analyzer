@@ -25,7 +25,7 @@ except Exception:
     redis = None  # type: ignore
 
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
 
 class User(BaseModel):
@@ -179,6 +179,9 @@ async def viewer_or_admin(
     __: None = Depends(rate_limiter()),
 ):
     return {"message": f"Hello, {user.role.title()}!"}
+
+# Export a rate limiter instance for reuse in other routers
+rate_limit_dependency = rate_limiter()
 
 
 from schemas import UserCreate

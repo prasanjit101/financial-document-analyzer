@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from typing import Optional
+import asyncio
 
 from fastapi import FastAPI
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
@@ -30,8 +31,21 @@ async def init_db(app: Optional[FastAPI] = None) -> None:
     mongo_uri = settings.MONGODB_URI
     db_name = settings.MONGODB_DB_NAME
 
-    _client = AsyncIOMotorClient(mongo_uri)
-    _db = _client[db_name]
+    # Retry with exponential backoff to handle transient failures
+    delay = 0.5
+    for attempt in range(5):
+        try:
+            _client = AsyncIOMotorClient(mongo_uri, serverSelectionTimeoutMS=2000)
+            # Force server selection to verify connectivity
+            await _client.server_info()
+            _db = _client[db_name]
+            break
+        except Exception as e:
+            logger.warning("MongoDB connection attempt %d failed: %s", attempt + 1, str(e))
+            if attempt == 4:
+                raise
+            await asyncio.sleep(delay)
+            delay *= 2
 
     await _ensure_indexes(_db)
     logger.info("MongoDB connected and indexes ensured (db=%s)", db_name)

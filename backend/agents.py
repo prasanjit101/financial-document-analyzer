@@ -9,24 +9,30 @@ from tools import (
     risk_assessment_tool,
 )
 
-### Loading LLM
-# Use centralized settings for model selection
-llm = LLM(model=settings.LLM_MODEL)
+# Get LLM instance
+def get_llm(model: str = settings.LLM_MODEL):
+    return LLM(
+        model=model,
+        api_key=settings.LANGDB_API_KEY,
+        base_url=settings.LANGDB_API_BASE_URL,
+        extra_headers={"x-project-id": settings.LANGDB_PROJECT_ID}
+        )
 
 # Financial Analyst agent (professional, cautious, evidence-driven)
 financial_analyst = Agent(
     role="Senior Financial Analyst",
     goal=(
-        "Analyze provided financial documents and the user's query: {query}. "
-        "Extract relevant metrics, reason cautiously, and produce a concise, "
-        "evidence-based summary. Avoid speculative or personalized investment advice."
+        "You are a precise, compliance-aware financial analyst. "
+        "Analyze the provided document(s) and the user's query {query}. "
+        "Extract concrete metrics strictly from tool outputs, attribute claims to the source text, "
+        "and produce a concise, structured, evidence-based analysis. "
+        "Never provide personalized investment advice. If information is missing, say so."
     ),
     verbose=True,
     memory=False,
     backstory=(
-        "An experienced analyst focused on clear, compliant, and data-driven analysis. "
-        "Skilled at reading financial statements, identifying key metrics, and "
-        "communicating findings responsibly."
+        "Experienced analyst focused on clear, compliant, data-driven analysis. "
+        "Strong at reading financial statements, identifying key metrics, and communicating responsibly."
     ),
     tools=[
         search_tool,
@@ -34,8 +40,8 @@ financial_analyst = Agent(
         analyze_investment_tool,
         risk_assessment_tool,
     ],
-    llm=llm,
-    max_iter=3,
+    llm=get_llm("gemini/gemini-2.5-pro-preview-05-06"),
+    max_iter=3, 
     max_rpm=30,
     allow_delegation=True
 )
@@ -44,16 +50,16 @@ financial_analyst = Agent(
 verifier = Agent(
     role="Financial Document Verifier",
     goal=(
-        "Verify whether the provided file at the path appears to contain financial "
-        "context by extracting text and checking for financial terms."
+        "Determine whether the file at {file_path} plausibly contains financial context. "
+        "Use tools to extract text and look for financial indicators (e.g., revenue, EBITDA, cash flow, assets, liabilities). "
+        "Avoid over-claiming when signals are weak; when uncertain, state uncertainty explicitly."
     ),
     verbose=True,
     memory=False,
     backstory=(
-        "Detail-oriented reviewer who assesses documents for financial relevance. "
-        "Ensures we only proceed with files that exhibit financial indicators."
+        "Detail-oriented reviewer who filters non-financial documents to save downstream effort."
     ),
-    llm=llm,
+    llm=get_llm(),
     tools=[
         read_financial_document_tool,
     ],
@@ -67,15 +73,15 @@ verifier = Agent(
 investment_advisor = Agent(
     role="Investment Analysis Specialist",
     goal=(
-        "From extracted text, derive a compact, non-personalized investment overview "
-        "using simple heuristics. Clearly state assumptions and uncertainties."
+        "From extracted text, produce a compact, non-personalized investment overview. "
+        "Base all points on detected metrics and transparent heuristics; list assumptions and uncertainties. "
+        "Express any recommendation in broad, informational terms (e.g., Buy/Hold/Sell style) without personalization."
     ),
     verbose=True,
     backstory=(
-        "Provides structured, metrics-driven investment overviews without offering "
-        "personalized financial advice."
+        "Provides structured, metrics-driven investment overviews without personalized advice."
     ),
-    llm=llm,
+    llm=get_llm(),
     tools=[
         read_financial_document_tool,
         analyze_investment_tool,
@@ -91,15 +97,15 @@ investment_advisor = Agent(
 risk_assessor = Agent(
     role="Risk Assessment Specialist",
     goal=(
-        "Generate a concise risk assessment based on extracted metrics and simple "
-        "rules-of-thumb. Provide a risk score with clear contributing factors."
+        "Generate a concise, reproducible risk assessment grounded in extracted metrics and simple rules-of-thumb. "
+        "Output a numerical risk score and list concrete contributing factors. "
+        "If evidence is insufficient, indicate low confidence instead of guessing."
     ),
     verbose=True,
     backstory=(
-        "Evaluates leverage, liquidity, profitability, and growth to gauge risk in "
-        "a transparent, reproducible manner."
+        "Evaluates leverage, liquidity, profitability, and growth using transparent heuristics."
     ),
-    llm=llm,
+    llm=get_llm(),
     tools=[
         read_financial_document_tool,
         risk_assessment_tool,

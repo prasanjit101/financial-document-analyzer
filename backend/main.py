@@ -1,26 +1,30 @@
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Depends
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Depends, Request
 from typing import Optional
 import logging
 import os
 import uuid
 import asyncio
 from contextlib import asynccontextmanager
+from fastapi.responses import JSONResponse
 
 from crewai import Crew, Process
 from config import settings
 from agents import financial_analyst
-from auth import get_current_user, User
+from services.auth import get_current_user, User
 from db import init_db, close_db, get_db
-from repositories import documents as docs_repo
 from repositories import analyses as analyses_repo
+from redis_utils import cache_get_json, cache_set_json
 from repositories import audit_logs as audit_repo
 from task import analyze_financial_document as analyze_financial_document_task
+from pylangdb.crewai import init
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan to manage startup and shutdown."""
     await init_db(app)
     logger.info("Application startup complete")
+    init()
     try:
         yield
     finally:
@@ -34,13 +38,37 @@ app = FastAPI(title="Financial Document Analyzer", lifespan=lifespan)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Log unhandled rejections in asyncio tasks to help diagnose timeouts
+def _handle_asyncio_exception(loop, context):
+    msg = context.get("exception") or context.get("message")
+    logger.error("Asyncio exception: %s", msg)
+
+try:
+    loop = asyncio.get_event_loop()
+    loop.set_exception_handler(_handle_asyncio_exception)
+except Exception:
+    pass
+
 # Routers
 try:
-    from auth import router as auth_router
+    from services.auth import router as auth_router
     app.include_router(auth_router)
+    from services.documents import router as documents_router  # Document routes
+    app.include_router(documents_router)
 except Exception:
     # Avoid startup failure if auth dependencies are missing in some environments
     pass
+
+# Global exception handlers for robustness and structured errors
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled exception")
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+from fastapi.exceptions import RequestValidationError
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
 def run_crew(query: str, file_path: str="data/sample.pdf"):
     """To run the whole crew"""
@@ -59,127 +87,19 @@ async def root():
     """Health check endpoint"""
     return {"message": "Financial Document Analyzer API is running"}
 
-@app.post("/analyze")
-async def analyze_financial_document(
-    file: UploadFile = File(...),
-    query: str = Form(default="Analyze this financial document for investment insights"),
-    current_user: User = Depends(get_current_user),
-):
-    """Analyze financial document and provide comprehensive investment recommendations"""
-    
-    file_id = str(uuid.uuid4())
-    file_path = f"data/financial_document_{file_id}.pdf"
-    
-    try:
-        # Ensure data directory exists
-        os.makedirs("data", exist_ok=True)
-        
-        # Save uploaded file
-        with open(file_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
-        
-        # Validate query
-        if query=="" or query is None:
-            query = "Analyze this financial document for investment insights"
-            
-        # Persist document metadata
-        db = get_db()
-        doc = await docs_repo.create_document(
-            db=db,
-            filename=file.filename or os.path.basename(file_path),
-            path=file_path,
-            size=len(content or b""),
-            mime=getattr(file, "content_type", None),
-            uploaded_by=current_user.username,
-        )
 
-        # Process the financial document with all analysts
-        response = run_crew(query=query.strip(), file_path=file_path)
-
-        # Persist analysis referencing the document
-        analysis = await analyses_repo.create_analysis(
-            db=db,
-            document_id=str(doc.get("_id")),
-            user_id=current_user.username,
-            query=query.strip(),
-            summary=str(response),
-        )
-
-        # Audit log
-        try:
-            await audit_repo.write_audit_log(
-                db=db,
-                path="/analyze",
-                method="POST",
-                user=current_user.username,
-                status="success",
-                extra={"documentId": str(doc.get("_id")), "analysisId": str(analysis.get("_id"))},
-            )
-        except Exception:
-            logger.exception("Failed to write audit log")
-        
-        return {
-            "status": "success",
-            "query": query,
-            "analysis": str(response),
-            "file_processed": file.filename,
-            "documentId": str(doc.get("_id")),
-            "analysisId": str(analysis.get("_id")),
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing financial document: {str(e)}")
-    
-    finally:
-        # Keep uploaded file for reference. In production, use a storage lifecycle policy.
-        pass
-
-
-@app.get("/documents")
-async def list_documents(
-    skip: int = 0,
-    limit: int = 20,
-    current_user: User = Depends(get_current_user),
-):
-    db = get_db()
-    docs = await docs_repo.list_documents(db=db, uploaded_by=current_user.username, skip=skip, limit=limit)
-    for d in docs:
-        if "_id" in d:
-            d["_id"] = str(d["_id"])  # serialize ObjectId
-    return {"items": docs}
-
-
-@app.get("/documents/{document_id}")
-async def get_document(document_id: str, current_user: User = Depends(get_current_user)):
-    db = get_db()
-    doc = await docs_repo.get_document(db=db, document_id=document_id)
-    if not doc or doc.get("uploadedBy") != current_user.username:
-        raise HTTPException(status_code=404, detail="Document not found")
-    doc["_id"] = str(doc["_id"])  # serialize
-    return doc
-
-
-@app.delete("/documents/{document_id}")
-async def delete_document(document_id: str, current_user: User = Depends(get_current_user)):
-    db = get_db()
-    doc = await docs_repo.get_document(db=db, document_id=document_id)
-    if not doc or doc.get("uploadedBy") != current_user.username:
-        raise HTTPException(status_code=404, detail="Document not found")
-    ok = await docs_repo.delete_document(db=db, document_id=document_id)
-    if not ok:
-        raise HTTPException(status_code=500, detail="Failed to delete document")
-    # optional: remove file from disk (omitted for now)
-    return {"status": "deleted", "documentId": document_id}
-
-
-@app.get("/analyses")
+@app.get("v1/analyses")
 async def list_analyses(
     documentId: Optional[str] = None,
     skip: int = 0,
     limit: int = 20,
     current_user: User = Depends(get_current_user),
 ):
+    cache_key = f"analyses:list:{current_user.username}:{documentId or ''}:{skip}:{limit}"
+    cached = cache_get_json(cache_key)
+    if cached is not None:
+        return {"items": cached}
+
     db = get_db()
     items = await analyses_repo.list_analyses(
         db=db,
@@ -191,16 +111,23 @@ async def list_analyses(
     for a in items:
         if "_id" in a:
             a["_id"] = str(a["_id"])  # serialize ObjectId
+    cache_set_json(cache_key, items, ttl_seconds=settings.CACHE_TTL_DEFAULT_SECONDS)
     return {"items": items}
 
 
-@app.get("/analyses/{analysis_id}")
+@app.get("/v1/analyses/{analysis_id}")
 async def get_analysis(analysis_id: str, current_user: User = Depends(get_current_user)):
+    cache_key = f"analyses:get:{analysis_id}"
+    cached = cache_get_json(cache_key)
+    if cached is not None:
+        return cached
+
     db = get_db()
     a = await analyses_repo.get_analysis(db=db, analysis_id=analysis_id)
     if not a or a.get("userId") != current_user.username:
         raise HTTPException(status_code=404, detail="Analysis not found")
     a["_id"] = str(a["_id"])  # serialize
+    cache_set_json(cache_key, a, ttl_seconds=settings.CACHE_TTL_LONG_SECONDS)
     return a
 
 if __name__ == "__main__":

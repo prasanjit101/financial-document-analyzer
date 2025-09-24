@@ -61,13 +61,25 @@ class FinancialDocumentTool():
         full_report = ""
         try:
             with pdfplumber.open(path) as pdf:
-                for page in pdf.pages:
+                # Guard: limit pages and total extracted characters to avoid excessive memory usage
+                max_pages = getattr(settings, "MAX_PDF_PAGES", 200)
+                max_chars = getattr(settings, "MAX_EXTRACTED_TEXT_CHARS", 2_000_000)
+                extracted_chars = 0
+                for idx, page in enumerate(pdf.pages):
+                    if idx >= max_pages:
+                        break
                     content = page.extract_text() or ""
                     if content:
-                        # Normalize excessive newlines
                         while "\n\n" in content:
                             content = content.replace("\n\n", "\n")
+                        # Truncate if approaching char budget
+                        remaining = max_chars - extracted_chars
+                        if remaining <= 0:
+                            break
+                        if len(content) > remaining:
+                            content = content[:remaining]
                         full_report += content + "\n"
+                        extracted_chars += len(content)
         except Exception:
             return ""
 
@@ -371,7 +383,7 @@ if BaseTool is not None:
     class AnalyzeInvestmentTool(BaseTool):  # type: ignore
         name: str = "Analyze Investment"
         description: str = (
-            "Generates a concise investment overview from extracted financial text."
+            "Generates a concise, structured investment overview from extracted financial text. "
         )
 
         def _run(self, financial_document_data: str) -> str:  # type: ignore[override]

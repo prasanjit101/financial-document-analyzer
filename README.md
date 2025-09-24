@@ -54,14 +54,14 @@ The system analyzes financial documents like Tesla's Q2 2025 financial update.
 
 #### **Frontend Integration (MANDATORY)**
 - Build a complete web application frontend using modern framework (React, Vue.js, or Angular)
-- **Preferred (not mandatory):** TailwindCSS for styling and shadcn/ui components for enhanced UI
+<!-- - **Preferred (not mandatory):** TailwindCSS for styling and shadcn/ui components for enhanced UI
 - Real-time file upload with progress indicators
 - Interactive dashboards for financial analysis results
 - User authentication and session management on frontend
 - Document management interface (upload, view, delete, search)
 - Analysis history and results visualization
 - Export functionality with download capabilities
-- Error handling and user feedback systems
+- Error handling and user feedback systems -->
 
 #### **Performance & Scalability**
 - Implement Redis caching for frequently accessed data

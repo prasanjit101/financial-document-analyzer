@@ -5,18 +5,18 @@
         "version": "0.1.0"
     },
     "paths": {
-        "/auth/login": {
+        "/v1/auth/login": {
             "post": {
                 "tags": [
                     "auth"
                 ],
                 "summary": "Login",
-                "operationId": "login_auth_login_post",
+                "operationId": "login_v1_auth_login_post",
                 "requestBody": {
                     "content": {
                         "application/x-www-form-urlencoded": {
                             "schema": {
-                                "$ref": "#/components/schemas/Body_login_auth_login_post"
+                                "$ref": "#/components/schemas/Body_login_v1_auth_login_post"
                             }
                         }
                     },
@@ -44,13 +44,13 @@
                 }
             }
         },
-        "/auth/me": {
+        "/v1/auth/me": {
             "get": {
                 "tags": [
                     "auth"
                 ],
                 "summary": "Read Me",
-                "operationId": "read_me_auth_me_get",
+                "operationId": "read_me_v1_auth_me_get",
                 "responses": {
                     "200": {
                         "description": "Successful Response",
@@ -68,13 +68,13 @@
                 ]
             }
         },
-        "/auth/admin-only": {
+        "/v1/auth/admin-only": {
             "get": {
                 "tags": [
                     "auth"
                 ],
                 "summary": "Admin Only",
-                "operationId": "admin_only_auth_admin_only_get",
+                "operationId": "admin_only_v1_auth_admin_only_get",
                 "responses": {
                     "200": {
                         "description": "Successful Response",
@@ -92,13 +92,13 @@
                 ]
             }
         },
-        "/auth/viewer-or-admin": {
+        "/v1/auth/viewer-or-admin": {
             "get": {
                 "tags": [
                     "auth"
                 ],
                 "summary": "Viewer Or Admin",
-                "operationId": "viewer_or_admin_auth_viewer_or_admin_get",
+                "operationId": "viewer_or_admin_v1_auth_viewer_or_admin_get",
                 "responses": {
                     "200": {
                         "description": "Successful Response",
@@ -116,14 +116,14 @@
                 ]
             }
         },
-        "/auth/register": {
+        "/v1/auth/register": {
             "post": {
                 "tags": [
                     "auth"
                 ],
                 "summary": "Register",
                 "description": "Open registration endpoint. Forces role to 'viewer' for simplicity/security.",
-                "operationId": "register_auth_register_post",
+                "operationId": "register_v1_auth_register_post",
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -156,33 +156,19 @@
                 }
             }
         },
-        "/": {
-            "get": {
-                "summary": "Root",
-                "description": "Health check endpoint",
-                "operationId": "root__get",
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {}
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/analyze": {
+        "/v1/documents/analyze": {
             "post": {
+                "tags": [
+                    "documents"
+                ],
                 "summary": "Analyze Financial Document",
-                "description": "Analyze financial document and provide comprehensive investment recommendations",
-                "operationId": "analyze_financial_document_analyze_post",
+                "description": "Analyze a financial document and provide investment recommendations.",
+                "operationId": "analyze_financial_document_v1_documents_analyze_post",
                 "requestBody": {
                     "content": {
                         "multipart/form-data": {
                             "schema": {
-                                "$ref": "#/components/schemas/Body_analyze_financial_document_analyze_post"
+                                "$ref": "#/components/schemas/Body_analyze_financial_document_v1_documents_analyze_post"
                             }
                         }
                     },
@@ -215,10 +201,14 @@
                 ]
             }
         },
-        "/documents": {
+        "/v1/documents": {
             "get": {
+                "tags": [
+                    "documents"
+                ],
                 "summary": "List Documents",
-                "operationId": "list_documents_documents_get",
+                "description": "List all documents uploaded by the current user.",
+                "operationId": "list_documents_v1_documents_get",
                 "security": [
                     {
                         "OAuth2PasswordBearer": []
@@ -268,10 +258,14 @@
                 }
             }
         },
-        "/documents/{document_id}": {
+        "/v1/documents/{document_id}": {
             "get": {
+                "tags": [
+                    "documents"
+                ],
                 "summary": "Get Document",
-                "operationId": "get_document_documents__document_id__get",
+                "description": "Get a specific document by ID if owned by the current user.",
+                "operationId": "get_document_v1_documents__document_id__get",
                 "security": [
                     {
                         "OAuth2PasswordBearer": []
@@ -310,8 +304,12 @@
                 }
             },
             "delete": {
+                "tags": [
+                    "documents"
+                ],
                 "summary": "Delete Document",
-                "operationId": "delete_document_documents__document_id__delete",
+                "description": "Delete a document by ID if owned by the current user.",
+                "operationId": "delete_document_v1_documents__document_id__delete",
                 "security": [
                     {
                         "OAuth2PasswordBearer": []
@@ -350,10 +348,73 @@
                 }
             }
         },
-        "/analyses": {
+        "/v1/documents/jobs/{job_id}": {
+            "get": {
+                "tags": [
+                    "documents"
+                ],
+                "summary": "Get Job",
+                "description": "Get background job status and result metadata.",
+                "operationId": "get_job_v1_documents_jobs__job_id__get",
+                "security": [
+                    {
+                        "OAuth2PasswordBearer": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "job_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Job Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/": {
+            "get": {
+                "summary": "Root",
+                "description": "Health check endpoint",
+                "operationId": "root__get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "v1/analyses": {
             "get": {
                 "summary": "List Analyses",
-                "operationId": "list_analyses_analyses_get",
+                "operationId": "list_analysesv1_analyses_get",
                 "security": [
                     {
                         "OAuth2PasswordBearer": []
@@ -419,10 +480,10 @@
                 }
             }
         },
-        "/analyses/{analysis_id}": {
+        "/v1/analyses/{analysis_id}": {
             "get": {
                 "summary": "Get Analysis",
-                "operationId": "get_analysis_analyses__analysis_id__get",
+                "operationId": "get_analysis_v1_analyses__analysis_id__get",
                 "security": [
                     {
                         "OAuth2PasswordBearer": []
@@ -464,7 +525,7 @@
     },
     "components": {
         "schemas": {
-            "Body_analyze_financial_document_analyze_post": {
+            "Body_analyze_financial_document_v1_documents_analyze_post": {
                 "properties": {
                     "file": {
                         "type": "string",
@@ -481,9 +542,9 @@
                 "required": [
                     "file"
                 ],
-                "title": "Body_analyze_financial_document_analyze_post"
+                "title": "Body_analyze_financial_document_v1_documents_analyze_post"
             },
-            "Body_login_auth_login_post": {
+            "Body_login_v1_auth_login_post": {
                 "properties": {
                     "grant_type": {
                         "anyOf": [
@@ -540,7 +601,7 @@
                     "username",
                     "password"
                 ],
-                "title": "Body_login_auth_login_post"
+                "title": "Body_login_v1_auth_login_post"
             },
             "HTTPValidationError": {
                 "properties": {

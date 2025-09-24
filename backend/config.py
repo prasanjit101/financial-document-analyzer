@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: Optional[str] = Field(default=None, description="Alias for Gemini API key; some libs use this name")
     SERPER_API_KEY: Optional[str] = Field(default=None, description="Serper.dev API key for web search tool")
 
+    # LangDB configuration
+    LANGDB_API_KEY: Optional[str] = Field(default=None, description="LangDB API key for database operations")
+    LANGDB_PROJECT_ID: Optional[str] = Field(default=None, description="LangDB project identifier")
+    LANGDB_API_BASE_URL: str = Field(
+        default="https://api.us-east-1.langdb.ai",
+        description="LangDB API base URL"
+    )
+
     # FastAPI server config (optional convenience)
     API_HOST: str = Field(default="0.0.0.0", description="FastAPI host bind address")
     API_PORT: int = Field(default=8000, description="FastAPI port")
@@ -60,6 +68,32 @@ class Settings(BaseSettings):
     )
     RATE_LIMIT_MAX_REQUESTS: int = Field(
         default=30, description="Default maximum requests per window per identity"
+    )
+
+    # Cache TTLs (seconds)
+    CACHE_TTL_DEFAULT_SECONDS: int = Field(
+        default=60, description="Default TTL for cached list/detail endpoints"
+    )
+    CACHE_TTL_LONG_SECONDS: int = Field(
+        default=300, description="Longer TTL for less volatile data"
+    )
+
+    # Uploads and processing limits
+    MAX_UPLOAD_SIZE_BYTES: int = Field(
+        default=100 * 1024 * 1024,  # 100MB
+        description="Maximum allowed upload size in bytes",
+    )
+    ALLOWED_UPLOAD_MIME_TYPES: list[str] = Field(
+        default_factory=lambda: ["application/pdf"],
+        description="Allowed MIME types for uploaded documents",
+    )
+    MAX_QUERY_CHARS: int = Field(
+        default=2000,
+        description="Maximum allowed characters for analysis query/prompt",
+    )
+    ANALYSIS_TIMEOUT_SECONDS: int = Field(
+        default=120,
+        description="Timeout in seconds for document analysis crew execution",
     )
 
     # MongoDB
