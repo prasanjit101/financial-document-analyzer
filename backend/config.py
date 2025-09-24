@@ -114,6 +114,11 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    CLIENT_URL: str = Field(
+        default="http://localhost:5173",
+        description="Client URL",
+    )
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

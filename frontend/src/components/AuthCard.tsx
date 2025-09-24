@@ -34,7 +34,7 @@ export function AuthCard() {
         <CardTitle>{mode === "register" ? "Create account" : "Sign in"}</CardTitle>
       </CardHeader>
       <CardContent>
-        <form onSubmit={onSubmit}>
+        <form onSubmit={onSubmit} className="flex flex-col gap-4 w-sm">
           {mode === "register" && (
             <Input
               placeholder="Full name (optional)"
@@ -50,23 +50,26 @@ export function AuthCard() {
             disabled={isLoading}
             required
           />
-          <Input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={isLoading}
-            required
-          />
+          <div className="flex flex-col gap-2">
+            <Input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={isLoading}
+              required
+            />
+            <p className="text-sm text-muted-foreground text-left">Password must contain at least one letter, one number, and one special character</p>
+          </div>
           <Button type="submit" disabled={isLoading}>
             {mode === "register" ? "Register" : "Login"}
           </Button>
           <Separator />
           <Button
-            type="button"
             variant="secondary"
             onClick={() => setMode(mode === "register" ? "login" : "register")}
             disabled={isLoading}
+            className="text-primary-foreground"
           >
             {mode === "register" ? "Have an account? Sign in" : "Need an account? Register"}
           </Button>

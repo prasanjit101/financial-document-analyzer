@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # Represent Mongo ObjectId as a plain string for Pydantic v2 compatibility
@@ -13,9 +14,20 @@ PyObjectId = str
 # Users
 class UserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=60)
-    password: str = Field(min_length=6, max_length=200)
+    password: str = Field(min_length=8, max_length=200)
     full_name: Optional[str] = None
     role: str = Field(default="viewer")  # "admin" or "viewer"
+
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, v):
+        if not re.search(r'[A-Za-z]', v):
+            raise ValueError('Password must contain at least one letter')
+        if not re.search(r'\d', v):
+            raise ValueError('Password must contain at least one number')
+        if not re.search(r'[!@#$%^&*(),.?":{}|<>]', v):
+            raise ValueError('Password must contain at least one special character')
+        return v
 
 
 class UserOut(BaseModel):

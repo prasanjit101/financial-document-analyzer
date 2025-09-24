@@ -10,7 +10,7 @@ export function Home() {
         <CardTitle>Welcome{user?.full_name ? `, ${user.full_name}` : ""}</CardTitle>
       </CardHeader>
       <CardContent>
-        <Button variant="secondary" onClick={logout}>Logout</Button>
+              <Button onClick={logout}>Logout</Button>
       </CardContent>
     </Card>
   );

@@ -1,7 +1,7 @@
 // Minimal API client for auth endpoints
 // DRY helpers and narrow surface aligned with current needs
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+const API_BASE = "http://localhost:8000";
 
 export type RegisterPayload = {
   username: string;
