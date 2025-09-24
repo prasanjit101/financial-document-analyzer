@@ -39,3 +39,14 @@ docker run -d --name mongo -p 27017:27017 mongo:7
 - `DELETE /documents/{id}` (auth required) deletes one you own.
 - `GET /analyses` (auth required) lists analyses filtered by `documentId`.
 - `GET /analyses/{id}` (auth required) fetches one.
+
+## OpenAPI
+Step 1: Run the app
+```bash
+  uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Step 2: Generate the OpenAPI schema
+```bash
+  curl -s http://localhost:8000/openapi.json -o backend/openapi.json
+```
