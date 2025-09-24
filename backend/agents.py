@@ -1,16 +1,12 @@
 ## Importing libraries and files
-import os
-from dotenv import load_dotenv
-load_dotenv()
-
-
 from crewai import Agent, LLM
+from config import settings
 
 from tools import search_tool, FinancialDocumentTool, InvestmentTool, RiskTool
 
 ### Loading LLM
-# Use env-configured model or a safe default
-llm = LLM(model=os.getenv("LLM_MODEL", "openai/gpt-4o-mini"))
+# Use centralized settings for model selection
+llm = LLM(model=settings.LLM_MODEL)
 
 # Financial Analyst agent (professional, cautious, evidence-driven)
 financial_analyst = Agent(

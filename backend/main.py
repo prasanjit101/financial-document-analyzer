@@ -4,10 +4,19 @@ import uuid
 import asyncio
 
 from crewai import Crew, Process
+from config import settings
 from agents import financial_analyst
 from task import analyze_financial_document as analyze_financial_document_task
 
 app = FastAPI(title="Financial Document Analyzer")
+
+# Routers
+try:
+    from auth import router as auth_router
+    app.include_router(auth_router)
+except Exception:
+    # Avoid startup failure if auth dependencies are missing in some environments
+    pass
 
 def run_crew(query: str, file_path: str="data/sample.pdf"):
     """To run the whole crew"""
@@ -72,4 +81,4 @@ async def analyze_financial_document(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(app, host=settings.API_HOST, port=settings.API_PORT, reload=True)

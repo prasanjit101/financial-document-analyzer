@@ -1,7 +1,6 @@
 ## Importing libraries and files
 import os
-from dotenv import load_dotenv
-load_dotenv()
+from config import settings  # ensures env is loaded centrally
 
 try:
     from crewai_tools.tools.serper_dev_tool import SerperDevTool
