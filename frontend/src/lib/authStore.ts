@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { apiLogin, apiMe, apiRegister, type AuthTokenResponse, type UserMe } from "./api";
+import { apiLogin, apiMe, apiRegister } from "./api";
+import { type AuthTokenResponse, type UserMe } from "./types";
 
 type AuthState = {
   token: string | null;

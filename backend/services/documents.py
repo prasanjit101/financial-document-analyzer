@@ -28,16 +28,6 @@ router = APIRouter(prefix="/v1/documents", tags=["documents"])
 
 logger = logging.getLogger(__name__)
 
-def run_crew(query: str, file_path: str = "data/sample.pdf"):
-    """Run the financial analysis crew."""
-    financial_crew = Crew(
-        agents=[__import__('agents').financial_analyst],
-        tasks=[analyze_financial_document_task],
-        process=Process.sequential,
-    )
-    result = financial_crew.kickoff({'query': query, 'file_path': file_path})
-    return result
-
 @router.post("/analyze", dependencies=[Depends(rate_limit_dependency)])
 async def analyze_financial_document(
     request: Request,

@@ -1,29 +1,6 @@
-// Minimal API client for auth endpoints
-// DRY helpers and narrow surface aligned with current needs
+import { type RegisterPayload, type LoginPayload, type AuthTokenResponse, type UserMe, type AnalyzeResponse, type JobMeta } from "./types";
 
 const API_BASE = "http://localhost:8000";
-
-export type RegisterPayload = {
-  username: string;
-  password: string;
-  full_name?: string | null;
-};
-
-export type LoginPayload = {
-  username: string;
-  password: string;
-};
-
-export type AuthTokenResponse = {
-  access_token: string;
-  token_type: string;
-};
-
-export type UserMe = {
-  username: string;
-  full_name?: string | null;
-  role: string;
-};
 
 function buildHeaders(token?: string): HeadersInit {
   const headers: HeadersInit = { "content-type": "application/json" };
@@ -66,6 +43,27 @@ export async function apiLogin(payload: LoginPayload): Promise<AuthTokenResponse
 
 export async function apiMe(token: string): Promise<UserMe> {
   const res = await fetch(`${API_BASE}/v1/auth/me`, {
+    method: "GET",
+    headers: buildHeaders(token),
+  });
+  return handle(res);
+}
+
+// ---- Documents API ----
+export async function apiAnalyzeDocument(params: { file: File; query?: string; token: string }): Promise<AnalyzeResponse> {
+  const form = new FormData();
+  form.append("file", params.file);
+  if (params.query) form.append("query", params.query);
+  const res = await fetch(`${API_BASE}/v1/documents/analyze`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${params.token}` },
+    body: form,
+  });
+  return handle(res);
+}
+
+export async function apiGetJob(jobId: string, token: string): Promise<JobMeta> {
+  const res = await fetch(`${API_BASE}/v1/documents/jobs/${jobId}`, {
     method: "GET",
     headers: buildHeaders(token),
   });
