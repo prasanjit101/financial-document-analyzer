@@ -41,6 +41,21 @@ export type JobMeta = {
     analysis_id?: string;
 };
 
+export type DocumentItem = {
+    _id: string;
+    filename: string;
+    path: string;
+    size: number;
+    mime?: string | null;
+    uploadedBy: string;
+    createdAt: string;
+    latestJobId?: string | null;
+};
+
+export type DocumentsList = {
+    items: DocumentItem[];
+};
+
 // ---- Analyses API types ----
 export type Analysis = {
     _id: string;

@@ -1,4 +1,4 @@
-import { type RegisterPayload, type LoginPayload, type AuthTokenResponse, type UserMe, type AnalyzeResponse, type JobMeta, type Analysis } from "./types";
+import { type RegisterPayload, type LoginPayload, type AuthTokenResponse, type UserMe, type AnalyzeResponse, type JobMeta, type Analysis, type DocumentsList } from "./types";
 
 const API_BASE = "http://localhost:8000";
 
@@ -62,9 +62,29 @@ export async function apiAnalyzeDocument(params: { file: File; query?: string; t
   return handle(res);
 }
 
+export async function apiListDocuments(params: { token: string; skip?: number; limit?: number }): Promise<DocumentsList> {
+  const { token, skip, limit } = params;
+  const url = new URL(`${API_BASE}/v1/documents`);
+  if (typeof skip === "number" && skip > 0) url.searchParams.set("skip", String(skip));
+  if (typeof limit === "number" && limit > 0) url.searchParams.set("limit", String(limit));
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    headers: buildHeaders(token),
+  });
+  return handle(res);
+}
+
 export async function apiGetJob(jobId: string, token: string): Promise<JobMeta> {
   const res = await fetch(`${API_BASE}/v1/documents/jobs/${jobId}`, {
     method: "GET",
+    headers: buildHeaders(token),
+  });
+  return handle(res);
+}
+
+export async function apiDeleteDocument(documentId: string, token: string): Promise<{ status: string; documentId: string }> {
+  const res = await fetch(`${API_BASE}/v1/documents/${documentId}`, {
+    method: "DELETE",
     headers: buildHeaders(token),
   });
   return handle(res);

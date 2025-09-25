@@ -133,7 +133,9 @@
                         "description": "Successful Response",
                         "content": {
                             "application/json": {
-                                "schema": {}
+                                "schema": {
+                                    "$ref": "#/components/schemas/AnalyzeJobQueuedResponse"
+                                }
                             }
                         }
                     },
@@ -195,7 +197,9 @@
                         "description": "Successful Response",
                         "content": {
                             "application/json": {
-                                "schema": {}
+                                "schema": {
+                                    "$ref": "#/components/schemas/DocumentsListResponse"
+                                }
                             }
                         }
                     },
@@ -241,7 +245,9 @@
                         "description": "Successful Response",
                         "content": {
                             "application/json": {
-                                "schema": {}
+                                "schema": {
+                                    "$ref": "#/components/schemas/DocumentOut"
+                                }
                             }
                         }
                     },
@@ -285,7 +291,9 @@
                         "description": "Successful Response",
                         "content": {
                             "application/json": {
-                                "schema": {}
+                                "schema": {
+                                    "$ref": "#/components/schemas/DocumentDeleteResponse"
+                                }
                             }
                         }
                     },
@@ -331,7 +339,9 @@
                         "description": "Successful Response",
                         "content": {
                             "application/json": {
-                                "schema": {}
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobStatusResponse"
+                                }
                             }
                         }
                     },
@@ -348,27 +358,13 @@
                 }
             }
         },
-        "/": {
+        "/v1/analyses": {
             "get": {
-                "summary": "Root",
-                "description": "Health check endpoint",
-                "operationId": "root__get",
-                "responses": {
-                    "200": {
-                        "description": "Successful Response",
-                        "content": {
-                            "application/json": {
-                                "schema": {}
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "v1/analyses": {
-            "get": {
+                "tags": [
+                    "analyses"
+                ],
                 "summary": "List Analyses",
-                "operationId": "list_analysesv1_analyses_get",
+                "operationId": "list_analyses_v1_analyses_get",
                 "security": [
                     {
                         "OAuth2PasswordBearer": []
@@ -436,6 +432,9 @@
         },
         "/v1/analyses/{analysis_id}": {
             "get": {
+                "tags": [
+                    "analyses"
+                ],
                 "summary": "Get Analysis",
                 "operationId": "get_analysis_v1_analyses__analysis_id__get",
                 "security": [
@@ -475,10 +474,61 @@
                     }
                 }
             }
+        },
+        "/": {
+            "get": {
+                "summary": "Root",
+                "description": "Health check endpoint",
+                "operationId": "root__get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
         }
     },
     "components": {
         "schemas": {
+            "AnalyzeJobQueuedResponse": {
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "title": "Status",
+                        "description": "Current queue status, typically 'queued'"
+                    },
+                    "query": {
+                        "type": "string",
+                        "title": "Query"
+                    },
+                    "file_processed": {
+                        "type": "string",
+                        "title": "File Processed"
+                    },
+                    "documentId": {
+                        "type": "string",
+                        "title": "Documentid"
+                    },
+                    "jobId": {
+                        "type": "string",
+                        "title": "Jobid"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "status",
+                    "query",
+                    "file_processed",
+                    "documentId",
+                    "jobId"
+                ],
+                "title": "AnalyzeJobQueuedResponse"
+            },
             "Body_analyze_financial_document_v1_documents_analyze_post": {
                 "properties": {
                     "file": {
@@ -557,6 +607,90 @@
                 ],
                 "title": "Body_login_v1_auth_login_post"
             },
+            "DocumentDeleteResponse": {
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "title": "Status"
+                    },
+                    "documentId": {
+                        "type": "string",
+                        "title": "Documentid"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "status",
+                    "documentId"
+                ],
+                "title": "DocumentDeleteResponse"
+            },
+            "DocumentOut": {
+                "properties": {
+                    "_id": {
+                        "type": "string",
+                        "title": "Id"
+                    },
+                    "filename": {
+                        "type": "string",
+                        "title": "Filename"
+                    },
+                    "path": {
+                        "type": "string",
+                        "title": "Path"
+                    },
+                    "size": {
+                        "type": "integer",
+                        "title": "Size"
+                    },
+                    "mime": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Mime"
+                    },
+                    "uploadedBy": {
+                        "type": "string",
+                        "title": "Uploadedby"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "title": "Createdat"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "_id",
+                    "filename",
+                    "path",
+                    "size",
+                    "uploadedBy",
+                    "createdAt"
+                ],
+                "title": "DocumentOut"
+            },
+            "DocumentsListResponse": {
+                "properties": {
+                    "items": {
+                        "items": {
+                            "$ref": "#/components/schemas/DocumentOut"
+                        },
+                        "type": "array",
+                        "title": "Items"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "items"
+                ],
+                "title": "DocumentsListResponse"
+            },
             "HTTPValidationError": {
                 "properties": {
                     "detail": {
@@ -570,6 +704,110 @@
                 "type": "object",
                 "title": "HTTPValidationError"
             },
+            "JobStatusResponse": {
+                "properties": {
+                    "id": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Id"
+                    },
+                    "status": {
+                        "type": "string",
+                        "title": "Status"
+                    },
+                    "progress": {
+                        "anyOf": [
+                            {
+                                "type": "integer",
+                                "maximum": 100.0,
+                                "minimum": 0.0
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Progress"
+                    },
+                    "file_path": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "File Path"
+                    },
+                    "query": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Query"
+                    },
+                    "user_id": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "User Id"
+                    },
+                    "document_id": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Document Id"
+                    },
+                    "analysis_id": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Analysis Id"
+                    },
+                    "error": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Error"
+                    }
+                },
+                "additionalProperties": true,
+                "type": "object",
+                "required": [
+                    "status"
+                ],
+                "title": "JobStatusResponse"
+            },
             "UserCreate": {
                 "properties": {
                     "username": {
@@ -581,7 +819,7 @@
                     "password": {
                         "type": "string",
                         "maxLength": 200,
-                        "minLength": 6,
+                        "minLength": 8,
                         "title": "Password"
                     },
                     "full_name": {

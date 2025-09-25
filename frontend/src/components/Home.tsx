@@ -8,6 +8,8 @@ import { apiAnalyzeDocument } from "@/lib/api";
 import { type AnalyzeResponse } from "@/lib/types";
 import { toast } from "sonner";
 import { Analysis } from "./Analysis";
+import { DocumentHistory } from "./DocumentHistory";
+import { setJobIdForDocument } from "@/lib/documentJobs";
 
 type AnalysisView = {
   jobId: string;
@@ -23,6 +25,7 @@ export function Home() {
   const [query, setQuery] = useState<string>("Analyze this financial document for investment insights");
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [analysis, setAnalysis] = useState<AnalysisView | null>(null);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState<number>(0);
   // No local polling state in Home; delegated to Analysis component
 
   const canUpload = useMemo(() => !!file && !isUploading, [file, isUploading]);
@@ -38,6 +41,8 @@ export function Home() {
       }
       const res: AnalyzeResponse = await apiAnalyzeDocument({ file, query, token });
       setAnalysis({ jobId: res.jobId, documentId: res.documentId, query: res.query });
+      setJobIdForDocument(res.documentId, res.jobId);
+      setHistoryRefreshKey((key) => key + 1);
       toast.success("File uploaded. Analysis started.");
       navigate(`/analysis/${res.jobId}`);
     } catch (e: any) {
@@ -89,7 +94,7 @@ export function Home() {
           )}
         </CardContent>
       </Card>
-      {/* TODO: Past analyses as list items */}
+      <DocumentHistory refreshKey={historyRefreshKey} className="space-y-4" />
     </div>
   );
 }
