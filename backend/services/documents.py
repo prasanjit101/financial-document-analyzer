@@ -160,7 +160,7 @@ async def analyze_financial_document(
     finally:
         pass  # In production, use a storage lifecycle policy
 
-@router.get("", response_model=DocumentsListResponse)
+@router.get("", dependencies=[Depends(rate_limit_dependency)], response_model=DocumentsListResponse)
 async def list_documents(
     skip: int = 0,
     limit: int = 20,
@@ -182,7 +182,7 @@ async def list_documents(
     await cache_set_json(cache_key, docs, ttl_seconds=settings.CACHE_TTL_DEFAULT_SECONDS)
     return {"items": docs}
 
-@router.get("/{document_id}", response_model=DocumentOut)
+@router.get("/{document_id}", dependencies=[Depends(rate_limit_dependency)], response_model=DocumentOut)
 async def get_document(document_id: str, current_user: User = Depends(get_current_user)):
     """Get a specific document by ID if owned by the current user."""
     cache_key = f"docs:get:{document_id}"
@@ -198,7 +198,7 @@ async def get_document(document_id: str, current_user: User = Depends(get_curren
     await cache_set_json(cache_key, doc, ttl_seconds=settings.CACHE_TTL_LONG_SECONDS)
     return doc
 
-@router.delete("/{document_id}", response_model=DocumentDeleteResponse)
+@router.delete("/{document_id}", dependencies=[Depends(rate_limit_dependency)], response_model=DocumentDeleteResponse)
 async def delete_document(document_id: str, current_user: User = Depends(get_current_user)):
     """Delete a document by ID if owned by the current user."""
     db = get_db()
@@ -214,7 +214,7 @@ async def delete_document(document_id: str, current_user: User = Depends(get_cur
     return {"status": "deleted", "documentId": document_id}
 
 
-@router.get("/jobs/{job_id}", response_model=JobStatusResponse)
+@router.get("/jobs/{job_id}", dependencies=[Depends(rate_limit_dependency)], response_model=JobStatusResponse)
 async def get_job(job_id: str, current_user: User = Depends(get_current_user)):
     """Get background job status and result metadata."""
     meta = await get_job_status(job_id)
