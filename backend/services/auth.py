@@ -12,17 +12,13 @@ from config import settings
 from db import get_db
 from repositories import users as users_repo
 import logging
+import redis
 
 try:
     # Authlib provides a JOSE-compliant JWT API
     from authlib.jose import jwt
 except Exception as e:  # pragma: no cover - fail fast with clear error
     raise RuntimeError("authlib is required for JWT functionality. Please install it.")
-
-try:
-    import redis
-except Exception:
-    redis = None  # type: ignore
 
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
@@ -80,9 +76,13 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     db = get_db()
     raw = await users_repo.get_by_username(db, username)
-    if not raw:
+    if not raw or raw.get("username") is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-    return User(username=raw.get("username"), full_name=raw.get("full_name"), role=raw.get("role", "viewer"))
+    return User(
+        username=str(raw.get("username")),
+        full_name=raw.get("full_name"),
+        role=raw.get("role", "viewer")
+    )
 
 
 def require_role(required: str):

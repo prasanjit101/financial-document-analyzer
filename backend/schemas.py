@@ -65,6 +65,41 @@ class DocumentOut(BaseModel):
         json_encoders = {datetime: lambda v: v.isoformat()}
 
 
+# -----------------------------
+# Document endpoint responses
+# -----------------------------
+class AnalyzeJobQueuedResponse(BaseModel):
+    status: str = Field(description="Current queue status, typically 'queued'")
+    query: str
+    file_processed: str
+    documentId: str
+    jobId: str
+
+
+class DocumentsListResponse(BaseModel):
+    items: list[DocumentOut]
+
+
+class DocumentDeleteResponse(BaseModel):
+    status: str
+    documentId: str
+
+
+class JobStatusResponse(BaseModel):
+    id: Optional[str] = None
+    status: str
+    progress: Optional[int] = Field(default=None, ge=0, le=100)
+    file_path: Optional[str] = None
+    query: Optional[str] = None
+    user_id: Optional[str] = None
+    document_id: Optional[str] = None
+    analysis_id: Optional[str] = None
+    error: Optional[str] = None
+
+    class Config:
+        extra = "allow"  # Allow forward compatibility for unexpected metadata keys
+
+
 # Analyses
 class AnalysisCreate(BaseModel):
     documentId: str

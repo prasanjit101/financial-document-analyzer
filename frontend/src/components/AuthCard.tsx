@@ -29,12 +29,12 @@ export function AuthCard() {
   }
 
   return (
-    <Card>
+    <Card className="w-sm mx-auto">
       <CardHeader>
         <CardTitle>{mode === "register" ? "Create account" : "Sign in"}</CardTitle>
       </CardHeader>
       <CardContent>
-        <form onSubmit={onSubmit} className="flex flex-col gap-4 w-sm">
+        <form onSubmit={onSubmit} className="flex flex-col gap-4">
           {mode === "register" && (
             <Input
               placeholder="Full name (optional)"
@@ -69,7 +69,6 @@ export function AuthCard() {
             variant="secondary"
             onClick={() => setMode(mode === "register" ? "login" : "register")}
             disabled={isLoading}
-            className="text-primary-foreground"
           >
             {mode === "register" ? "Have an account? Sign in" : "Need an account? Register"}
           </Button>

@@ -13,9 +13,9 @@ from tools import (
 def get_llm(model: str = settings.LLM_MODEL):
     return LLM(
         model=model,
-        api_key=settings.LANGDB_API_KEY,
-        base_url=settings.LANGDB_API_BASE_URL,
-        extra_headers={"x-project-id": settings.LANGDB_PROJECT_ID}
+        # api_key=settings.LANGDB_API_KEY,
+        # base_url=settings.LANGDB_API_BASE_URL,
+        # extra_headers={"x-project-id": settings.LANGDB_PROJECT_ID}
         )
 
 # Financial Analyst agent (professional, cautious, evidence-driven)
@@ -29,7 +29,6 @@ financial_analyst = Agent(
         "Never provide personalized investment advice. If information is missing, say so."
     ),
     verbose=True,
-    memory=False,
     backstory=(
         "Experienced analyst focused on clear, compliant, data-driven analysis. "
         "Strong at reading financial statements, identifying key metrics, and communicating responsibly."
@@ -40,7 +39,7 @@ financial_analyst = Agent(
         analyze_investment_tool,
         risk_assessment_tool,
     ],
-    llm=get_llm("gemini/gemini-2.5-pro-preview-05-06"),
+    llm=get_llm("gemini/gemini-2.5-pro"),
     max_iter=3, 
     max_rpm=30,
     allow_delegation=True
@@ -55,7 +54,6 @@ verifier = Agent(
         "Avoid over-claiming when signals are weak; when uncertain, state uncertainty explicitly."
     ),
     verbose=True,
-    memory=False,
     backstory=(
         "Detail-oriented reviewer who filters non-financial documents to save downstream effort."
     ),

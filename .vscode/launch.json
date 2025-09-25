@@ -22,6 +22,25 @@
             },
             "cwd": "${workspaceFolder}/backend",
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Python: Worker FastAPI (uvicorn)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "worker_pdf:app",
+                "--reload",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8001"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/backend"
+            },
+            "cwd": "${workspaceFolder}/backend",
+            "console": "integratedTerminal"
         }
     ]
 }

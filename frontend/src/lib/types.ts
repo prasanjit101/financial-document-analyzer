@@ -38,4 +38,15 @@ export type JobMeta = {
     document_id?: string;
     result?: unknown;
     error?: string;
+    analysis_id?: string;
+};
+
+// ---- Analyses API types ----
+export type Analysis = {
+    _id: string;
+    documentId: string;
+    userId: string;
+    query: string;
+    summary: string; // markdown content produced by the LLM flow
+    createdAt?: string;
 };

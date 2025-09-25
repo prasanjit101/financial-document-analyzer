@@ -1,4 +1,4 @@
-import { type RegisterPayload, type LoginPayload, type AuthTokenResponse, type UserMe, type AnalyzeResponse, type JobMeta } from "./types";
+import { type RegisterPayload, type LoginPayload, type AuthTokenResponse, type UserMe, type AnalyzeResponse, type JobMeta, type Analysis } from "./types";
 
 const API_BASE = "http://localhost:8000";
 
@@ -64,6 +64,15 @@ export async function apiAnalyzeDocument(params: { file: File; query?: string; t
 
 export async function apiGetJob(jobId: string, token: string): Promise<JobMeta> {
   const res = await fetch(`${API_BASE}/v1/documents/jobs/${jobId}`, {
+    method: "GET",
+    headers: buildHeaders(token),
+  });
+  return handle(res);
+}
+
+// ---- Analyses API ----
+export async function apiGetAnalysis(analysisId: string, token: string): Promise<Analysis> {
+  const res = await fetch(`${API_BASE}/v1/analyses/${analysisId}`, {
     method: "GET",
     headers: buildHeaders(token),
   });

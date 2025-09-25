@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     """Typed application settings sourced from environment variables."""
 
     # LLM/model config
-    LLM_MODEL: str = Field(default="gemini/gemini-2.5-flash", description="Default LLM model identifier")
+    LLM_MODEL: str = Field(default="gemini/gemini-2.5-flash-preview", description="Default LLM model identifier")
     APP_ENV: Literal["dev", "prod"] = Field(default="dev", description="Default app environment")
 
     GEMINI_API_KEY: Optional[str] = Field(default=None, description="Google Gemini API key")
