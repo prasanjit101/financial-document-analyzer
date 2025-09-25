@@ -7,7 +7,6 @@ from contextlib import asynccontextmanager
 from typing import Optional, Any, cast
 
 from fastapi import FastAPI
-from langtrace_python_sdk import langtrace
 from fastapi.responses import JSONResponse
 from config import settings
 from db import init_db, get_db, close_db
@@ -25,8 +24,12 @@ from task import (
     investment_analysis as investment_analysis_task,
 )
 from crewai import Crew, Process
+from opik import configure
+from opik.integrations.crewai import track_crewai
 
-langtrace.init(api_key=settings.LANGTRACE_API_KEY)
+
+configure(api_key=settings.OPIQ_API_KEY,use_local=False)
+track_crewai(project_name="financial_document_analysis")
 
 logger = logging.getLogger(__name__)
 

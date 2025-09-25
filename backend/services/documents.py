@@ -214,7 +214,7 @@ async def delete_document(document_id: str, current_user: User = Depends(get_cur
     return {"status": "deleted", "documentId": document_id}
 
 
-@router.get("/jobs/{job_id}", dependencies=[Depends(rate_limit_dependency)], response_model=JobStatusResponse)
+@router.get("/jobs/{job_id}", response_model=JobStatusResponse)
 async def get_job(job_id: str, current_user: User = Depends(get_current_user)):
     """Get background job status and result metadata."""
     meta = await get_job_status(job_id)

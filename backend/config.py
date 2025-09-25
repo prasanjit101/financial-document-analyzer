@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     SERPER_API_KEY: Optional[str] = Field(default=None, description="Serper.dev API key for web search tool")
 
     # LangTrace configuration
-    LANGTRACE_API_KEY: Optional[str] = Field(default=None, description="LangTrace API key for database operations")
+    OPIQ_API_KEY: Optional[str] = Field(default=None, description="LangTrace API key for database operations")
 
     # FastAPI server config (optional convenience)
     API_HOST: str = Field(default="0.0.0.0", description="FastAPI host bind address")

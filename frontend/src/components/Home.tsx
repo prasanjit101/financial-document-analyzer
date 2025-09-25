@@ -11,6 +11,8 @@ import { Analysis } from "./Analysis";
 import { DocumentHistory } from "./DocumentHistory";
 import { setJobIdForDocument } from "@/lib/documentJobs";
 
+const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
+
 type AnalysisView = {
   jobId: string;
   documentId: string;
@@ -34,11 +36,6 @@ export function Home() {
     if (!file || !token) return;
     setIsUploading(true);
     try {
-      if (file.type && file.type !== "application/pdf") {
-        toast.error("Only PDF files are allowed");
-        setIsUploading(false);
-        return;
-      }
       const res: AnalyzeResponse = await apiAnalyzeDocument({ file, query, token });
       setAnalysis({ jobId: res.jobId, documentId: res.documentId, query: res.query });
       setJobIdForDocument(res.documentId, res.jobId);
@@ -47,6 +44,7 @@ export function Home() {
       navigate(`/analysis/${res.jobId}`);
     } catch (e: any) {
       toast.error(e?.message || "Upload failed");
+      setFile(null);
     } finally {
       setIsUploading(false);
     }
@@ -68,7 +66,22 @@ export function Home() {
               <Input
                 type="file"
                 accept="application/pdf"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => {
+                  const selectedFile = e.target.files?.[0] ?? null;
+                  if (selectedFile) {
+                    if (selectedFile.type !== "application/pdf") {
+                      toast.error("Only PDF files are allowed");
+                      e.target.value = ""; // Clear the input
+                      return;
+                    }
+                    if (selectedFile.size > MAX_FILE_SIZE) {
+                      toast.error("File size exceeds 100MB limit. Please select a smaller file.");
+                      e.target.value = ""; // Clear the input
+                      return;
+                    }
+                  }
+                  setFile(selectedFile);
+                }}
                 disabled={isUploading}
               />
               <Input
@@ -98,5 +111,3 @@ export function Home() {
     </div>
   );
 }
-
-
