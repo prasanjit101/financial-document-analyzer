@@ -57,7 +57,7 @@ export function Home() {
   }
 
   return (
-    <div className="flex flex-col max-w-xl mx-auto space-y-8">
+    <div className="flex flex-col max-w-xl mx-auto space-y-8 p-4">
       <Card>
         <CardHeader>
           <CardTitle>Welcome{user?.full_name ? `, ${user.full_name}` : ""}</CardTitle>

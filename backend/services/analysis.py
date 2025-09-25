@@ -5,7 +5,6 @@ from services.auth import get_current_user, User
 from db import init_db, close_db, get_db
 from repositories import analyses as analyses_repo
 from redis_utils import cache_get_json, cache_set_json
-from pylangdb.crewai import init
 
 
 analysis_router = APIRouter(prefix="/v1/analyses", tags=["analyses"])

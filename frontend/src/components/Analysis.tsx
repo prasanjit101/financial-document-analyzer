@@ -49,7 +49,7 @@ export function Analysis(props: AnalysisProps = {}) {
           return;
         }
         if (meta.status === "failed") return;
-        setTimeout(poll, 1500);
+        setTimeout(poll, 4000); // Poll every 4 seconds
       } catch (e: any) {
         if (!cancelled) toast.error(e?.message || "Failed to fetch job status");
       }

@@ -13,9 +13,6 @@ from tools import (
 def get_llm(model: str = settings.LLM_MODEL):
     return LLM(
         model=model,
-        # api_key=settings.LANGDB_API_KEY,
-        # base_url=settings.LANGDB_API_BASE_URL,
-        # extra_headers={"x-project-id": settings.LANGDB_PROJECT_ID}
         )
 
 # Financial Analyst agent (professional, cautious, evidence-driven)

@@ -37,13 +37,8 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: Optional[str] = Field(default=None, description="Alias for Gemini API key; some libs use this name")
     SERPER_API_KEY: Optional[str] = Field(default=None, description="Serper.dev API key for web search tool")
 
-    # LangDB configuration
-    LANGDB_API_KEY: Optional[str] = Field(default=None, description="LangDB API key for database operations")
-    LANGDB_PROJECT_ID: Optional[str] = Field(default=None, description="LangDB project identifier")
-    LANGDB_API_BASE_URL: str = Field(
-        default="https://api.us-east-1.langdb.ai",
-        description="LangDB API base URL"
-    )
+    # LangTrace configuration
+    LANGTRACE_API_KEY: Optional[str] = Field(default=None, description="LangTrace API key for database operations")
 
     # FastAPI server config (optional convenience)
     API_HOST: str = Field(default="0.0.0.0", description="FastAPI host bind address")

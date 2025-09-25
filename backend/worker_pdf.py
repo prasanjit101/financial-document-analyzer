@@ -7,8 +7,10 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI
+from langtrace_python_sdk import langtrace
 from fastapi.responses import JSONResponse
 
+from backend import config
 from config import settings
 from db import init_db, get_db, close_db
 from redis_utils import (
@@ -154,6 +156,7 @@ async def stop_worker() -> None:
 async def lifespan(app: FastAPI):
     # Initialize DB and any third-party SDKs
     await init_db(app)
+    langtrace.init(api_key=config.settings.LANGTRACE_API_KEY)
     try:
         try:
             # Optional: initialize pylangdb crews if available
