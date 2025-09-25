@@ -4,13 +4,11 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, Any, cast
 
 from fastapi import FastAPI
 from langtrace_python_sdk import langtrace
 from fastapi.responses import JSONResponse
-
-from backend import config
 from config import settings
 from db import init_db, get_db, close_db
 from redis_utils import (
@@ -20,27 +18,43 @@ from redis_utils import (
     update_job,
     get_job_status,
 )
-from task import analyze_financial_document as analyze_financial_document_task
+from task import (
+    verification as verification_task,
+    analyze_financial_document as analyze_financial_document_task,
+    risk_assessment as risk_assessment_task,
+    investment_analysis as investment_analysis_task,
+)
 from crewai import Crew, Process
 
+langtrace.init(api_key=settings.LANGTRACE_API_KEY)
 
 logger = logging.getLogger(__name__)
 
 
 # -----------------------------
-# Crew runner (blocking, run in thread)
+# Crew runner (async)
 # -----------------------------
-def _run_crew_sync(query: str, file_path: str) -> str:
-    """Run the CrewAI pipeline synchronously for the given query and file path."""
-    from agents import financial_analyst
+async def _run_crew_sync(query: str, file_path: str) -> str:
+    """Run the sequential CrewAI pipeline asynchronously for the given query and file path."""
+    from agents import verifier, financial_analyst, risk_assessor, investment_advisor
 
     try:
         financial_crew = Crew(
-            agents=[financial_analyst],
-            tasks=[analyze_financial_document_task],
+            agents=[
+                verifier,
+                financial_analyst,
+                risk_assessor,
+                investment_advisor,
+            ],
+            tasks=[
+                verification_task,
+                analyze_financial_document_task,
+                risk_assessment_task,
+                investment_analysis_task,
+            ],
             process=Process.sequential,
         )
-        result = financial_crew.kickoff({"query": query, "file_path": file_path})
+        result = await financial_crew.kickoff_async({"query": query, "file_path": file_path, })
     except Exception as e:
         logger.exception("Error occurred while running CrewAI pipeline", exc_info=e)
         result = {"error": str(e)}
@@ -52,12 +66,12 @@ def _run_crew_sync(query: str, file_path: str) -> str:
 # -----------------------------
 async def process_job(job_id: str) -> None:
     """Process a single job by ID pulled from Redis."""
-    client = get_redis_client()
+    client = await get_redis_client()
     if client is None:
         return
     job_key = JOB_KEY_PREFIX + job_id
     try:
-        raw = client.hgetall(job_key)
+        raw = await cast(Any, client).hgetall(job_key)
         if not raw:
             return
         file_path = raw.get("file_path")
@@ -65,22 +79,22 @@ async def process_job(job_id: str) -> None:
         user_id = raw.get("user_id") or "unknown"
         document_id = raw.get("document_id")
         if not file_path or not os.path.exists(file_path):
-            update_job(job_id, status="failed", error="File not found")
+            await update_job(job_id, status="failed", error="File not found")
             return
 
-        update_job(job_id, status="processing", progress=10)
+        await update_job(job_id, status="processing", progress=10)
 
-        # Run blocking analysis in a worker thread
+        # Run analysis asynchronously 
         try:
-            response = await asyncio.to_thread(_run_crew_sync, query, file_path)
+            response = await _run_crew_sync(query, file_path)
             if "error" in response:
-                update_job(job_id, status="failed", error=response)
+                await update_job(job_id, status="failed", error=response)
                 return
         except Exception as e:
-            update_job(job_id, status="failed", error=str(e))
+            await update_job(job_id, status="failed", error=str(e))
             return
 
-        update_job(job_id, progress=70)
+        await update_job(job_id, progress=70)
 
         # Persist analysis
         db = get_db()
@@ -93,10 +107,10 @@ async def process_job(job_id: str) -> None:
             summary=str(response),
         )
 
-        update_job(job_id, status="completed", progress=100, analysis_id=str(analysis.get("_id")))
+        await update_job(job_id, status="completed", progress=100, analysis_id=str(analysis.get("_id")))
     except Exception as e:
         logger.exception("Worker failed processing job %s", job_id)
-        update_job(job_id, status="failed", error=str(e))
+        await update_job(job_id, status="failed", error=str(e))
 
 
 # -----------------------------
@@ -108,7 +122,7 @@ _stop_event: Optional[asyncio.Event] = None
 
 async def worker_loop(stop_event: asyncio.Event) -> None:
     """Continuously pull jobs from Redis queue and process until stopped."""
-    client = get_redis_client()
+    client = await get_redis_client()
     if client is None:
         logger.error("Redis is required for worker. Exiting worker loop.")
         return
@@ -116,7 +130,7 @@ async def worker_loop(stop_event: asyncio.Event) -> None:
     while not stop_event.is_set():
         try:
             # BRPOP returns (key, job_id) when available
-            item = client.blpop(QUEUE_KEY, timeout=5)
+            item = await cast(Any, client).blpop([QUEUE_KEY], timeout=5)
             if not item:
                 await asyncio.sleep(0.2)
                 continue
@@ -156,14 +170,7 @@ async def stop_worker() -> None:
 async def lifespan(app: FastAPI):
     # Initialize DB and any third-party SDKs
     await init_db(app)
-    langtrace.init(api_key=config.settings.LANGTRACE_API_KEY)
     try:
-        try:
-            # Optional: initialize pylangdb crews if available
-            from pylangdb.crewai import init as langdb_init  # type: ignore
-            langdb_init()
-        except Exception:
-            pass
         start_worker()
         yield
     finally:
@@ -177,7 +184,7 @@ app = FastAPI(title="PDF Worker Service", lifespan=lifespan, debug=settings.APP_
 @app.get("/")
 async def health() -> dict:
     """Basic health endpoint."""
-    client_ok = get_redis_client() is not None
+    client_ok = await get_redis_client() is not None
     worker_running = bool(_worker_task and not _worker_task.done())
     return {
         "status": "ok",
@@ -189,11 +196,11 @@ async def health() -> dict:
 @app.get("/status")
 async def status() -> dict:
     """Service status with simple diagnostics."""
-    client = get_redis_client()
+    client = await get_redis_client()
     ping = False
     try:
         if client:
-            client.ping()
+            await cast(Any, client).ping()
             ping = True
     except Exception:
         ping = False
@@ -223,7 +230,7 @@ async def control_stop() -> JSONResponse:
 @app.get("/jobs/{job_id}")
 async def job_status(job_id: str) -> JSONResponse:
     """Fetch job status directly from Redis (helper endpoint)."""
-    meta = get_job_status(job_id)
+    meta = await get_job_status(job_id)
     if not meta:
         return JSONResponse(status_code=404, content={"detail": "Job not found"})
     return JSONResponse(content=meta)
@@ -234,5 +241,3 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO if settings.APP_ENV == "dev" else logging.WARNING)
     uvicorn.run("worker_pdf:app", host=settings.API_HOST, port=settings.API_PORT + 1, reload=True)
-
-

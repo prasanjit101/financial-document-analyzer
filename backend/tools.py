@@ -1,7 +1,11 @@
 ## Importing libraries and files
 import os
+import asyncio
+import json
+from dataclasses import dataclass, asdict
+from typing import Any, Dict, List, Optional, Tuple, Set
+
 from config import settings  # ensures env is loaded centrally
-from typing import Dict, Tuple, Optional
 from crewai.tools import BaseTool
 try:
     from crewai_tools.tools.serper_dev_tool import SerperDevTool  # type: ignore
@@ -25,444 +29,633 @@ else:
             return ""
     search_tool = _NoopSearchTool()
 
-## Creating custom pdf reader tool
-class FinancialDocumentTool():
+## Creating custom pdf reader tool and analysis helpers
+
+
+@dataclass
+class DocumentExtractionResult:
+    status: str
+    file_path: str
+    page_count: int
+    classification: str
+    indicators: List[str]
+    full_text: str
+    truncated: bool
+    note: str = ""
+
+
+@dataclass
+class DetectedMetric:
+    name: str
+    value: str
+    unit: str
+    evidence: str
+
+
+_CLASSIFICATION_PATTERNS: List[Tuple[str, str]] = [
+    (r"balance\s+sheet|total\s+assets|shareholders'?\s+equity", "balance_sheet"),
+    (r"income\s+statement|revenue|gross\s+profit", "income_statement"),
+    (r"cash\s+flow|operating\s+activities|free\s+cash\s+flow", "cash_flow_statement"),
+    (r"management'?s\s+discussion|md&a", "management_discussion"),
+    (r"quarterly\s+report|10-q", "quarterly_report"),
+    (r"annual\s+report|10-k", "annual_report"),
+]
+
+_FINANCIAL_KEYWORDS: List[str] = [
+    "revenue",
+    "net income",
+    "ebitda",
+    "operating income",
+    "cash flow",
+    "assets",
+    "liabilities",
+    "equity",
+    "margin",
+    "earnings",
+]
+
+_METRIC_PATTERNS: Dict[str, re.Pattern[str]] = {
+    "revenue": re.compile(r"revenue(?:\s+(?:of|was|totaled))?\s*[$€£]?([\d,.]+)\s*(million|billion|thousand|m|bn|k)?", re.IGNORECASE),
+    "net_income": re.compile(r"net\s+income(?:\s+(?:of|was|totaled))?\s*[$€£]?([\d,.]+)\s*(million|billion|thousand|m|bn|k)?", re.IGNORECASE),
+    "ebitda": re.compile(r"ebitda(?:\s+(?:of|was|totaled))?\s*[$€£]?([\d,.]+)\s*(million|billion|thousand|m|bn|k)?", re.IGNORECASE),
+    "cash_flow": re.compile(r"cash\s+flow(?:\s+(?:of|from|was|totaled))?\s*[$€£]?([\d,.]+)\s*(million|billion|thousand|m|bn|k)?", re.IGNORECASE),
+    "gross_margin": re.compile(r"gross\s+margin\s+(?:of|was)?\s*([\d.]+)\s*%", re.IGNORECASE),
+    "operating_margin": re.compile(r"operating\s+margin\s+(?:of|was)?\s*([\d.]+)\s*%", re.IGNORECASE),
+}
+
+
+def _clean_text(value: str) -> str:
+    value = value.replace("\u2013", "-").replace("\u2014", "-")
+    value = re.sub(r"\s+", " ", value)
+    return value.strip()
+
+
+def _classify_document(text: str) -> Tuple[str, List[str]]:
+    lowered = text.lower()
+    for pattern, label in _CLASSIFICATION_PATTERNS:
+        if re.search(pattern, lowered):
+            indicators = [kw for kw in _FINANCIAL_KEYWORDS if kw in lowered]
+            return label, indicators
+    indicators = [kw for kw in _FINANCIAL_KEYWORDS if kw in lowered]
+    classification = "financial" if indicators else "unknown"
+    return classification, indicators
+
+
+def _extract_metrics(text: str, max_metrics: int = 10) -> List[DetectedMetric]:
+    metrics: List[DetectedMetric] = []
+    lowered = text.lower()
+    for name, pattern in _METRIC_PATTERNS.items():
+        for match in pattern.finditer(text):
+            raw_value = match.group(1) if match.groups() else match.group(0)
+            unit = match.group(2) if match.lastindex and match.lastindex >= 2 else "-"
+            evidence_start = max(match.start() - 40, 0)
+            evidence_end = min(match.end() + 40, len(text))
+            evidence = _clean_text(text[evidence_start:evidence_end])
+            metrics.append(DetectedMetric(name=name, value=_clean_text(raw_value), unit=_clean_text(unit or "-"), evidence=evidence))
+            if len(metrics) >= max_metrics:
+                return metrics
+    # simple keyword-based revenue growth indicator
+    if "year-over-year" in lowered or "yoy" in lowered:
+        metrics.append(DetectedMetric(name="growth_rate", value="year-over-year mentioned", unit="-", evidence="YOY growth reference detected"))
+    return metrics
+
+
+def _safe_json_loads(value: str) -> Optional[Any]:
+    try:
+        return json.loads(value)
+    except Exception:
+        return None
+
+
+def _normalize_metrics_list(items: Any) -> List[Dict[str, str]]:
+    metrics: List[Dict[str, str]] = []
+    if items is None:
+        return metrics
+    if isinstance(items, str):
+        parsed = _safe_json_loads(items)
+        if parsed is not None:
+            return _normalize_metrics_list(parsed)
+        return [{"name": "metric", "value": items, "unit": "-", "evidence": ""}]
+    if isinstance(items, dict):
+        items = [items]
+    if isinstance(items, list):
+        for entry in items:
+            if isinstance(entry, dict):
+                name = str(entry.get("name") or entry.get("metric") or entry.get("label") or entry.get("key") or "metric")
+                value = str(entry.get("value") or entry.get("amount") or entry.get("figure") or entry.get("score") or "-")
+                unit = str(entry.get("unit") or entry.get("units") or entry.get("currency") or "-")
+                evidence = str(entry.get("evidence") or entry.get("note") or entry.get("source") or "")
+                metrics.append({"name": name, "value": value, "unit": unit, "evidence": evidence})
+            elif entry is not None:
+                metrics.append({"name": "metric", "value": str(entry), "unit": "-", "evidence": ""})
+    return metrics
+
+
+def _merge_metric_lists(existing: List[Dict[str, str]], additional: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    merged: List[Dict[str, str]] = []
+    seen: Set[Tuple[str, str, str, str]] = set()
+    for collection in (existing, additional):
+        for metric in collection:
+            name = metric.get("name", "metric")
+            value = metric.get("value", "-")
+            unit = metric.get("unit", "-")
+            evidence = metric.get("evidence", "")
+            key = (str(name), str(value), str(unit), str(evidence))
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append({
+                "name": str(name),
+                "value": str(value),
+                "unit": str(unit),
+                "evidence": str(evidence),
+            })
+    return merged
+
+
+def _strip_code_fence(value: str) -> str:
+    trimmed = value.strip()
+    if trimmed.startswith("```"):
+        lines = trimmed.splitlines()
+        if len(lines) >= 2:
+            # drop opening fence (and optional language) and closing fence if present
+            lines = lines[1:]
+            if lines and lines[-1].strip().startswith("```"):
+                lines = lines[:-1]
+            trimmed = "\n".join(lines).strip()
+    return trimmed
+
+
+def _discover_document_path(payload: Dict[str, Any]) -> Optional[str]:
+    path_keys = [
+        "file_path",
+        "path",
+        "document_path",
+        "source_path",
+        "document",
+        "input_path",
+    ]
+    for key in path_keys:
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    for nested_key in [
+        "data_package",
+        "dataPackage",
+        "structured_financial_data",
+        "financial_data",
+        "risk_package",
+    ]:
+        nested = payload.get(nested_key)
+        if isinstance(nested, str):
+            maybe = _safe_json_loads(nested)
+            if isinstance(maybe, dict):
+                nested = maybe
+        if isinstance(nested, dict):
+            found = _discover_document_path(nested)
+            if found:
+                return found
+    return None
+
+
+def _collect_structured_segments(payload: Dict[str, Any], seen: Optional[Set[int]] = None) -> Tuple[List[str], List[Dict[str, str]]]:
+    if seen is None:
+        seen = set()
+    if not isinstance(payload, dict):
+        return [], []
+    if id(payload) in seen:
+        return [], []
+    seen.add(id(payload))
+
+    segments: List[str] = []
+    metrics_accum: List[Dict[str, str]] = []
+
+    for key in ["metrics", "detected_metrics", "target_metrics"]:
+        if key in payload:
+            normalized = _normalize_metrics_list(payload.get(key))
+            if normalized:
+                metrics_accum.extend(normalized)
+                for metric in normalized:
+                    unit_part = "" if metric["unit"] in {"", "-"} else f" {metric['unit']}"
+                    evidence_part = f" (evidence: {metric['evidence']})" if metric["evidence"] else ""
+                    segments.append(f"Metric {metric['name']}: {metric['value']}{unit_part}{evidence_part}")
+
+    ratio_candidates = payload.get("ratios") or payload.get("calculated_ratios")
+    if ratio_candidates:
+        parsed = ratio_candidates
+        if isinstance(parsed, str):
+            maybe = _safe_json_loads(parsed)
+            if maybe is not None:
+                parsed = maybe
+        if isinstance(parsed, dict):
+            parsed = [parsed]
+        if isinstance(parsed, list):
+            for ratio in parsed:
+                if isinstance(ratio, dict):
+                    name = str(ratio.get("name") or ratio.get("metric") or "ratio")
+                    value = str(ratio.get("value") or ratio.get("score") or ratio.get("amount") or "-")
+                    basis = str(ratio.get("basis") or ratio.get("inputs") or "-")
+                    note = str(ratio.get("note") or ratio.get("assumption") or "")
+                    note_part = f" (note: {note})" if note else ""
+                    segments.append(f"Ratio {name}: {value} (basis: {basis}){note_part}")
+                elif ratio is not None:
+                    segments.append(f"Ratio: {ratio}")
+
+    def _extend_from_sequence(entries: Any, prefix: str) -> None:
+        if not entries:
+            return
+        parsed_entries = entries
+        if isinstance(parsed_entries, str):
+            maybe = _safe_json_loads(parsed_entries)
+            if maybe is not None:
+                parsed_entries = maybe
+        if isinstance(parsed_entries, dict):
+            parsed_entries = [parsed_entries]
+        if not isinstance(parsed_entries, list):
+            parsed_entries = [parsed_entries]
+        for entry in parsed_entries:
+            if entry is None:
+                continue
+            if isinstance(entry, dict):
+                details = ", ".join(f"{k}={v}" for k, v in entry.items() if v not in (None, ""))
+                segments.append(f"{prefix} {details}".strip())
+            else:
+                segments.append(f"{prefix} {entry}".strip())
+
+    for key, prefix in [
+        ("insights", "Insight:"),
+        ("trends", "Trend:"),
+        ("signals", "Signal:"),
+        ("assumptions", "Assumption:"),
+        ("uncertainties", "Uncertainty:"),
+        ("factors", "Factor:"),
+        ("mitigants", "Mitigant:"),
+        ("stress_tests", "Stress Test:"),
+        ("monitoring", "Monitoring:"),
+        ("notes", "Note:"),
+    ]:
+        if key in payload:
+            _extend_from_sequence(payload.get(key), prefix)
+
+    for nested_key in [
+        "data_package",
+        "dataPackage",
+        "structured_financial_data",
+        "financial_data",
+        "risk_package",
+    ]:
+        if nested_key in payload:
+            nested = payload.get(nested_key)
+            if isinstance(nested, str):
+                maybe = _safe_json_loads(nested)
+                if maybe is not None:
+                    nested = maybe
+            if isinstance(nested, dict):
+                child_segments, child_metrics = _collect_structured_segments(nested, seen)
+                segments.extend(child_segments)
+                metrics_accum.extend(child_metrics)
+
+    return segments, metrics_accum
+
+
+class FinancialDocumentTool:
     @staticmethod
-    def read_data_tool(path='data/sample.pdf'):
-        """Tool to read data from a pdf file from a path
+    def read_data_tool(path: str = "data/sample.pdf") -> DocumentExtractionResult:
+        if not path or not os.path.exists(path) or not os.path.isfile(path):
+            return DocumentExtractionResult(
+                status="error",
+                file_path=path,
+                page_count=0,
+                classification="missing",
+                indicators=[],
+                full_text="",
+                truncated=False,
+                note="File not found or inaccessible.",
+            )
 
-        Args:
-            path (str, optional): Path of the pdf file. Defaults to 'data/sample.pdf'.
+        max_pages = getattr(settings, "MAX_PDF_PAGES", 200)
+        max_chars = getattr(settings, "MAX_EXTRACTED_TEXT_CHARS", 2_000_000)
+        aggregated_text: List[str] = []
+        extracted_chars = 0
+        page_count = 0
+        truncated = False
 
-        Returns:
-            str: Full Financial Document file
-        """
-        if not os.path.exists(path) or not os.path.isfile(path):
-            return ""
-
-        full_report = ""
         try:
             with pdfplumber.open(path) as pdf:
-                # Guard: limit pages and total extracted characters to avoid excessive memory usage
-                max_pages = getattr(settings, "MAX_PDF_PAGES", 200)
-                max_chars = getattr(settings, "MAX_EXTRACTED_TEXT_CHARS", 2_000_000)
-                extracted_chars = 0
                 for idx, page in enumerate(pdf.pages):
                     if idx >= max_pages:
+                        truncated = True
                         break
-                    content = page.extract_text() or ""
+                    try:
+                        content = page.extract_text() or ""
+                    except Exception:
+                        content = ""
+                    content = content.strip()
                     if content:
-                        while "\n\n" in content:
-                            content = content.replace("\n\n", "\n")
-                        # Truncate if approaching char budget
+                        content = content.replace("\r", "\n")
+                        content = re.sub(r"\n{2,}", "\n", content)
                         remaining = max_chars - extracted_chars
                         if remaining <= 0:
+                            truncated = True
                             break
                         if len(content) > remaining:
                             content = content[:remaining]
-                        full_report += content + "\n"
+                            truncated = True
+                        aggregated_text.append(content)
                         extracted_chars += len(content)
-        except Exception:
-            return ""
+                    page_count += 1
+        except Exception as exc:  # pragma: no cover - defensive
+            return DocumentExtractionResult(
+                status="error",
+                file_path=path,
+                page_count=page_count,
+                classification="error",
+                indicators=[],
+                full_text="",
+                truncated=truncated,
+                note=f"Failed to extract PDF text: {exc}",
+            )
 
-        return full_report
+        full_text = "\n".join(aggregated_text)
+        classification, indicators = _classify_document(full_text)
+        return DocumentExtractionResult(
+            status="ok",
+            file_path=path,
+            page_count=page_count,
+            classification=classification,
+            indicators=indicators,
+            full_text=full_text,
+            truncated=truncated,
+            note="" if full_text else "No extractable text detected.",
+        )
+
+    @staticmethod
+    async def read_data_tool_async(path: str = "data/sample.pdf") -> DocumentExtractionResult:
+        return await asyncio.to_thread(FinancialDocumentTool.read_data_tool, path)
+
+    @staticmethod
+    def serialize_result(result: DocumentExtractionResult, include_text: bool = True) -> str:
+        payload: Dict[str, Any] = asdict(result)
+        preview_len = getattr(settings, "PDF_PREVIEW_CHARS", 4000)
+        payload["preview"] = result.full_text[:preview_len]
+        if not include_text:
+            payload.pop("full_text", None)
+        payload["detected_metrics"] = [asdict(metric) for metric in _extract_metrics(result.full_text)] if result.full_text else []
+        return json.dumps(payload, ensure_ascii=False)
+
 
 class ReadFinancialDocumentTool(BaseTool):  # type: ignore
     name: str = "Read Financial Document"
     description: str = (
-        "Extracts text from a PDF at the given file path. Input should be a file path string."
+        "Extracts text and metadata from a PDF at the given file path. Returns JSON with classification and metrics."
     )
 
-    def _run(self, path: str = 'data/sample.pdf') -> str:  # type: ignore[override]
-        return FinancialDocumentTool.read_data_tool(path=path)
+    def _run(self, path: str = "data/sample.pdf") -> str:  # type: ignore[override]
+        result = FinancialDocumentTool.read_data_tool(path=path)
+        return FinancialDocumentTool.serialize_result(result)
+
+    async def _arun(self, path: str = "data/sample.pdf") -> str:  # type: ignore[override]
+        result = await FinancialDocumentTool.read_data_tool_async(path=path)
+        return FinancialDocumentTool.serialize_result(result)
 
 
-## Creating Investment Analysis Tool
-class InvestmentTool:
-    @staticmethod
-    def _normalize_number(raw_number: str) -> Optional[float]:
-        """Convert strings like "$1.2B", "3,450", "(120)", "45%", "10m" to float.
+def _normalize_input(financial_document_data: Any) -> Tuple[str, Dict[str, Any]]:
+    payload: Dict[str, Any] = {}
 
-        Returns None if the value cannot be parsed.
-        """
-        if raw_number is None:
-            return None
-
-        text = raw_number.strip()
-
-        # Detect negative via parentheses
-        is_negative = text.startswith("(") and text.endswith(")")
-        text = text.strip("()")
-
-        # Remove currency symbols and spaces
-        text = text.replace("$", "").replace("€", "").replace("£", "").replace("₹", "")
-        text = text.replace(",", "").strip()
-
-        multiplier = 1.0
-        # Handle explicit words
-        lower = text.lower()
-        if lower.endswith("billion"):
-            multiplier = 1e9
-            text = text[: -len("billion")]
-        elif lower.endswith("million"):
-            multiplier = 1e6
-            text = text[: -len("million")]
-        elif lower.endswith("thousand"):
-            multiplier = 1e3
-            text = text[: -len("thousand")]
-
-        # Handle suffix letters
-        lower = text.lower()
-        if lower.endswith("b"):
-            multiplier = 1e9
-            text = text[:-1]
-        elif lower.endswith("m"):
-            multiplier = 1e6
-            text = text[:-1]
-        elif lower.endswith("k"):
-            multiplier = 1e3
-            text = text[:-1]
-
-        # Remove percent sign (we return raw number; caller decides interpretation)
-        is_percent = text.endswith("%")
-        if is_percent:
-            text = text[:-1]
-
-        try:
-            value = float(text)
-            value = -value if is_negative else value
-            value = value * multiplier
-            return value
-        except Exception:
-            return None
-
-    @staticmethod
-    def _extract_numbers_from_line(line: str) -> Optional[str]:
-        """Extract the last number-like token from a line.
-
-        Supports forms like 1,234, 1.2B, (123), 45%, 10m, $2.3B
-        """
-        pattern = r"(?:\$|€|£|₹)?\(?[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)?\)?%?|(?:\$|€|£|₹)?\(?[0-9]+(?:\.[0-9]+)?\)?%?[bmkBMK]?|[0-9]+%"
-        matches = re.findall(pattern, line)
-        if not matches:
-            return None
-        return matches[-1]
-
-    @staticmethod
-    def _parse_financial_text(financial_document_data: str) -> Dict[str, float]:
-        """Parse common financial metrics from text.
-
-        Returns a dictionary with keys like revenue, net_income, operating_income, ebitda,
-        eps, debt, cash, fcf, gross_margin, operating_margin, net_margin, current_ratio,
-        quick_ratio, roe, roa, yoy_revenue_growth.
-        """
-        metrics: Dict[str, float] = {}
-
-        if not financial_document_data:
-            return metrics
-
-        lines = [l.strip() for l in financial_document_data.split("\n") if l.strip()]
-
-        metric_map: Dict[str, re.Pattern] = {
-            "revenue": re.compile(r"\b(total\s+)?revenue\b", re.I),
-            "net_income": re.compile(r"\b(net\s+income|net\s+earnings|profit)\b", re.I),
-            "operating_income": re.compile(r"\b(operating\s+income|operating\s+profit|EBIT)\b", re.I),
-            "ebitda": re.compile(r"\bEBITDA\b", re.I),
-            "eps": re.compile(r"\b(EPS|earnings\s+per\s+share)\b", re.I),
-            "debt": re.compile(r"\b(total\s+debt|long-?term\s+debt)\b", re.I),
-            "cash": re.compile(r"\b(cash(\s+and\s+cash\s+equivalents)?)\b", re.I),
-            "fcf": re.compile(r"\b(free\s+cash\s+flow|FCF)\b", re.I),
-            "gross_margin": re.compile(r"\bgross\s+margin\b", re.I),
-            "operating_margin": re.compile(r"\boperating\s+margin\b", re.I),
-            "net_margin": re.compile(r"\bnet\s+margin\b", re.I),
-            "current_ratio": re.compile(r"\bcurrent\s+ratio\b", re.I),
-            "quick_ratio": re.compile(r"\bquick\s+ratio\b", re.I),
-            "roe": re.compile(r"\b(ROE|return\s+on\s+equity)\b", re.I),
-            "roa": re.compile(r"\b(ROA|return\s+on\s+assets)\b", re.I),
-            "yoy": re.compile(r"\b(YoY|year[-\s]*over[-\s]*year)\b", re.I),
-            "growth": re.compile(r"\b(growth|increase|decrease)\b", re.I),
-        }
-
-        for line in lines:
-            for key, pattern in metric_map.items():
-                if pattern.search(line):
-                    raw = InvestmentTool._extract_numbers_from_line(line)
-                    num = InvestmentTool._normalize_number(raw) if raw else None
-                    if num is not None:
-                        # Map derived keys
-                        target_key = key
-                        if key == "yoy" or key == "growth":
-                            target_key = "yoy_revenue_growth" if "revenue" in line.lower() else "growth_indicator"
-                        if target_key not in metrics:
-                            metrics[target_key] = num
-
-        # Derive margins if not present
-        revenue = metrics.get("revenue")
-        net_income = metrics.get("net_income")
-        operating_income = metrics.get("operating_income")
-        if revenue is not None and revenue != 0:
-            if "net_margin" not in metrics and net_income is not None:
-                metrics["net_margin"] = (net_income / revenue) * 100.0
-            if "operating_margin" not in metrics and operating_income is not None:
-                metrics["operating_margin"] = (operating_income / revenue) * 100.0
-
-        return metrics
-
-    @staticmethod
-    def analyze_investment_tool(financial_document_data):
-        """Provide a concise investment analysis from extracted financial text.
-
-        Steps:
-        - Parse key metrics from text
-        - Compute simple heuristics
-        - Output a brief recommendation
-        """
-        if not financial_document_data:
-            return "No financial document text provided."
-
-        metrics = InvestmentTool._parse_financial_text(financial_document_data)
-
-        # Simple scoring model
-        score = 0
-        notes = []
-
-        revenue = metrics.get("revenue")
-        net_margin = metrics.get("net_margin")
-        operating_margin = metrics.get("operating_margin")
-        ebitda = metrics.get("ebitda")
-        debt = metrics.get("debt")
-        cash = metrics.get("cash")
-        fcf = metrics.get("fcf")
-        roe = metrics.get("roe")
-        yoy_growth = metrics.get("yoy_revenue_growth")
-
-        if roe is not None:
-            if roe >= 15:
-                score += 2
-                notes.append("Strong ROE")
-            elif roe >= 8:
-                score += 1
-                notes.append("Healthy ROE")
-            else:
-                score -= 1
-                notes.append("Weak ROE")
-
-        if net_margin is not None:
-            if net_margin >= 15:
-                score += 2
-                notes.append("High net margin")
-            elif net_margin >= 8:
-                score += 1
-                notes.append("Moderate net margin")
-            else:
-                score -= 1
-                notes.append("Thin net margin")
-
-        if yoy_growth is not None:
-            if yoy_growth >= 10:
-                score += 2
-                notes.append("Double-digit YoY growth")
-            elif yoy_growth >= 3:
-                score += 1
-                notes.append("Positive YoY growth")
-            elif yoy_growth < 0:
-                score -= 1
-                notes.append("Negative YoY growth")
-
-        if revenue is not None and revenue != 0 and debt is not None:
-            leverage = (debt / revenue)
-            if leverage > 1.0:
-                score -= 2
-                notes.append("High leverage vs revenue")
-            elif leverage > 0.5:
-                score -= 1
-                notes.append("Elevated leverage")
-
-        if cash is not None and debt is not None:
-            if cash >= debt:
-                score += 1
-                notes.append("Cash covers debt")
-            else:
-                notes.append("Cash below debt")
-
-        if fcf is not None:
-            if fcf > 0:
-                score += 1
-                notes.append("Positive FCF")
-            else:
-                score -= 1
-                notes.append("Negative FCF")
-
-        if ebitda is not None and ebitda <= 0:
-            score -= 2
-            notes.append("EBITDA at or below zero")
-
-        # Recommendation
-        if score >= 3:
-            recommendation = "Buy"
-        elif score >= 1:
-            recommendation = "Accumulate / Hold"
-        elif score >= -1:
-            recommendation = "Neutral / Watch"
+    if isinstance(financial_document_data, dict):
+        payload = financial_document_data
+    elif isinstance(financial_document_data, list):
+        payload = {"metrics": financial_document_data}
+    elif isinstance(financial_document_data, str):
+        cleaned = _strip_code_fence(financial_document_data)
+        parsed = _safe_json_loads(cleaned)
+        if isinstance(parsed, dict):
+            payload = parsed
+        elif isinstance(parsed, list):
+            payload = {"metrics": parsed}
         else:
-            recommendation = "Sell / Reduce"
+            return cleaned, {"full_text": cleaned}
+    elif financial_document_data is None:
+        payload = {}
+    else:
+        payload = {"value": financial_document_data}
 
-        # Prepare output
-        lines = []
-        lines.append("Investment Analysis")
-        lines.append("- Recommendation: " + recommendation)
-        lines.append(f"- Score: {score}")
-        if notes:
-            lines.append("- Signals: " + ", ".join(notes))
+    # Normalize nested JSON strings that may contain structured data
+    for key in [
+        "data_package",
+        "dataPackage",
+        "structured_financial_data",
+        "financial_data",
+        "risk_package",
+    ]:
+        if key in payload and isinstance(payload[key], str):
+            maybe = _safe_json_loads(_strip_code_fence(str(payload[key])))
+            if isinstance(maybe, dict):
+                payload[key] = maybe
 
-        def fmt(name: str, key: str, suffix: str = ""):
-            val = metrics.get(key)
-            if val is None:
-                return None
-            if key.endswith("margin") or key in ("roe", "roa", "yoy_revenue_growth"):
-                return f"- {name}: {val:.2f}%"
-            # Show in compact units
-            if abs(val) >= 1e9:
-                return f"- {name}: {val/1e9:.2f}B{suffix}"
-            if abs(val) >= 1e6:
-                return f"- {name}: {val/1e6:.2f}M{suffix}"
-            if abs(val) >= 1e3:
-                return f"- {name}: {val/1e3:.2f}K{suffix}"
-            return f"- {name}: {val:.2f}{suffix}"
+    # Promote nested classification/indicator hints if missing at top level
+    if not payload.get("classification"):
+        for key in ["data_package", "dataPackage", "structured_financial_data", "financial_data"]:
+            nested = payload.get(key)
+            if isinstance(nested, dict) and nested.get("classification"):
+                payload["classification"] = nested.get("classification")
+                break
+    if not payload.get("indicators"):
+        for key in ["data_package", "dataPackage", "structured_financial_data", "financial_data"]:
+            nested = payload.get(key)
+            if isinstance(nested, dict) and nested.get("indicators"):
+                payload["indicators"] = nested.get("indicators")
+                break
 
-        detail_keys: Tuple[Tuple[str, str, str], ...] = (
-            ("Revenue", "revenue", ""),
-            ("Net Income", "net_income", ""),
-            ("Operating Income", "operating_income", ""),
-            ("EBITDA", "ebitda", ""),
-            ("EPS", "eps", ""),
-            ("Debt", "debt", ""),
-            ("Cash", "cash", ""),
-            ("Free Cash Flow", "fcf", ""),
-            ("Gross Margin", "gross_margin", ""),
-            ("Operating Margin", "operating_margin", ""),
-            ("Net Margin", "net_margin", ""),
-            ("Current Ratio", "current_ratio", ""),
-            ("Quick Ratio", "quick_ratio", ""),
-            ("ROE", "roe", ""),
-            ("ROA", "roa", ""),
-            ("YoY Revenue Growth", "yoy_revenue_growth", ""),
+    existing_metrics = _normalize_metrics_list(payload.get("detected_metrics"))
+    if existing_metrics:
+        payload["detected_metrics"] = existing_metrics
+
+    text = str(payload.get("full_text") or payload.get("preview") or payload.get("text") or "")
+
+    structured_segments, structured_metrics = _collect_structured_segments(payload)
+    if structured_metrics:
+        payload["detected_metrics"] = _merge_metric_lists(
+            _normalize_metrics_list(payload.get("detected_metrics")),
+            structured_metrics,
         )
 
-        lines.append("\nKey Metrics")
-        for name, key, suffix in detail_keys:
-            s = fmt(name, key, suffix)
-            if s:
-                lines.append(s)
+    if not text and structured_segments:
+        text = "\n".join(structured_segments)
 
-        return "\n".join(lines)
+    doc_path = _discover_document_path(payload)
+    if not text and doc_path:
+        extraction = FinancialDocumentTool.read_data_tool(doc_path)
+        payload.setdefault("status", extraction.status)
+        payload.setdefault("classification", extraction.classification)
+        payload.setdefault("indicators", extraction.indicators)
+        payload.setdefault("page_count", extraction.page_count)
+        payload.setdefault("truncated", extraction.truncated)
+        payload.setdefault("file_path", extraction.file_path)
+        if extraction.note and not payload.get("note"):
+            payload["note"] = extraction.note
+        if extraction.full_text:
+            text = extraction.full_text
+            payload.setdefault("full_text", extraction.full_text)
+            detected_from_text = [asdict(metric) for metric in _extract_metrics(extraction.full_text)]
+            payload["detected_metrics"] = _merge_metric_lists(
+                _normalize_metrics_list(payload.get("detected_metrics")),
+                detected_from_text,
+            )
+
+    if not text and payload.get("note"):
+        text = str(payload["note"])
+
+    return text.strip(), payload
+
+
+class InvestmentTool:
+    @staticmethod
+    def analyze_investment_tool(financial_document_data: Any) -> str:
+        text, payload = _normalize_input(financial_document_data)
+        if not text:
+            return json.dumps({
+                "status": "error",
+                "message": "No financial document text provided.",
+            })
+
+        lowered = text.lower()
+        metrics = payload.get("detected_metrics") or [asdict(metric) for metric in _extract_metrics(text)]
+
+        positives = sum(1 for kw in ["increase", "growth", "record", "improved", "expanded"] if kw in lowered)
+        negatives = sum(1 for kw in ["decline", "decrease", "loss", "deteriorated", "restructuring"] if kw in lowered)
+
+        stance = "Hold"
+        if positives > negatives + 1:
+            stance = "Buy"
+        elif negatives > positives + 1:
+            stance = "Sell"
+
+        rationale: List[str] = []
+        if stance == "Buy":
+            rationale.append("Positive growth language outweighs risks.")
+        elif stance == "Sell":
+            rationale.append("Multiple negative performance signals detected.")
+        else:
+            rationale.append("Mixed signals suggest maintaining current positioning.")
+
+        if payload.get("classification"):
+            rationale.append(f"Document classified as {payload['classification'].replace('_', ' ')}.")
+
+        signals: List[str] = []
+        if "cash flow" in lowered:
+            signals.append("Cash flow discussed")
+        if "margin" in lowered:
+            signals.append("Margin commentary present")
+        if "guidance" in lowered:
+            signals.append("Guidance provided")
+        if "debt" in lowered:
+            signals.append("Debt profile referenced")
+        if not signals:
+            signals.append("No explicit financial signals detected")
+
+        assumptions = [
+            "Metrics interpreted at face value from supplied text.",
+            "No external market data incorporated.",
+        ]
+
+        target_metrics = {metric["name"]: metric.get("value", "n/a") for metric in metrics[:4]} if metrics else {}
+
+        result = {
+            "status": "ok",
+            "stance": stance,
+            "rationale": rationale,
+            "signals": signals,
+            "assumptions": assumptions,
+            "target_metrics": target_metrics,
+            "detected_metrics": metrics,
+        }
+        return json.dumps(result, ensure_ascii=False)
+
+    @staticmethod
+    async def analyze_investment_tool_async(financial_document_data: Any) -> str:
+        return await asyncio.to_thread(InvestmentTool.analyze_investment_tool, financial_document_data)
+
 
 # BaseTool wrapper exposing investment analysis as a CrewAI tool
 class AnalyzeInvestmentTool(BaseTool):  # type: ignore
     name: str = "Analyze Investment"
     description: str = (
-        "Generates a concise, structured investment overview from extracted financial text. "
+        "Generates a concise, structured investment overview from extracted financial text."
     )
 
-    def _run(self, financial_document_data: str) -> str:  # type: ignore[override]
+    def _run(self, financial_document_data: Any) -> str:  # type: ignore[override]
         return InvestmentTool.analyze_investment_tool(financial_document_data)
 
+    async def _arun(self, financial_document_data: Any) -> str:  # type: ignore[override]
+        return await InvestmentTool.analyze_investment_tool_async(financial_document_data)
 
-## Creating Risk Assessment Tool
+
 class RiskTool:
     @staticmethod
-    def create_risk_assessment_tool(financial_document_data):        
-        """Generate a concise risk assessment from extracted financial text.
+    def create_risk_assessment_tool(financial_document_data: Any) -> str:
+        text, payload = _normalize_input(financial_document_data)
+        if not text:
+            return json.dumps({
+                "status": "error",
+                "message": "No financial document text provided.",
+            })
 
-        Evaluates leverage, liquidity, profitability and growth to score risk.
-        Returns a short, structured summary and risk score 1 (low) to 5 (high).
-        """
-        if not financial_document_data:
-            return "No financial document text provided."
+        lowered = text.lower()
+        risk_score = 3
 
-        metrics = InvestmentTool._parse_financial_text(financial_document_data)
+        risk_factors: List[str] = []
+        mitigants: List[str] = []
 
-        risk_points = 0
-        factors = []
+        if any(term in lowered for term in ["leverage", "high debt", "debt to equity", "covenant"]):
+            risk_score += 1
+            risk_factors.append("Elevated leverage indicators present.")
+        if any(term in lowered for term in ["liquidity", "cash balance", "working capital"]):
+            mitigants.append("Liquidity discussed, suggesting active management.")
+        if any(term in lowered for term in ["loss", "decline", "headwinds", "downturn"]):
+            risk_score += 1
+            risk_factors.append("Negative performance language detected.")
+        if any(term in lowered for term in ["record", "improved", "growth", "strong"]):
+            risk_score -= 1
+            mitigants.append("Positive performance descriptors present.")
+        if "guidance" in lowered and "lower" in lowered:
+            risk_score += 1
+            risk_factors.append("Guidance revisions trending negatively.")
 
-        revenue = metrics.get("revenue")
-        debt = metrics.get("debt")
-        cash = metrics.get("cash")
-        current_ratio = metrics.get("current_ratio")
-        quick_ratio = metrics.get("quick_ratio")
-        net_margin = metrics.get("net_margin")
-        operating_margin = metrics.get("operating_margin")
-        yoy_growth = metrics.get("yoy_revenue_growth")
-        fcf = metrics.get("fcf")
+        risk_score = max(1, min(5, risk_score))
 
-        # Leverage
-        if revenue is not None and revenue != 0 and debt is not None:
-            leverage = debt / revenue
-            if leverage > 1.5:
-                risk_points += 2
-                factors.append("Very high leverage vs revenue")
-            elif leverage > 0.8:
-                risk_points += 1
-                factors.append("Elevated leverage")
+        if not risk_factors:
+            risk_factors.append("No explicit red flags detected in provided text.")
+        if mitigants:
+            risk_factors.extend(mitigants)
 
-        # Liquidity
-        if current_ratio is not None:
-            if current_ratio < 1.0:
-                risk_points += 2
-                factors.append("Current ratio < 1.0")
-            elif current_ratio < 1.5:
-                risk_points += 1
-                factors.append("Current ratio below 1.5")
-        if quick_ratio is not None and quick_ratio < 1.0:
-            risk_points += 1
-            factors.append("Quick ratio < 1.0")
+        confidence = "medium"
+        if payload.get("classification") in {"balance_sheet", "income_statement", "cash_flow_statement"}:
+            confidence = "high"
+        elif len(text) < 1000:
+            confidence = "low"
 
-        # Cash vs Debt
-        if cash is not None and debt is not None and cash < debt * 0.5:
-            risk_points += 1
-            factors.append("Cash covers <50% of debt")
+        stress_tests = []
+        if "interest rate" in lowered:
+            stress_tests.append("Assess sensitivity to interest rate shifts.")
+        if "supply chain" in lowered:
+            stress_tests.append("Model supply chain disruption scenarios.")
+        if not stress_tests:
+            stress_tests.append("Run base, downside, and severe revenue contraction scenarios.")
 
-        # Profitability
-        if net_margin is not None and net_margin < 5:
-            risk_points += 1
-            factors.append("Thin net margin")
-        if operating_margin is not None and operating_margin < 7:
-            risk_points += 1
-            factors.append("Low operating margin")
+        result = {
+            "status": "ok",
+            "score": risk_score,
+            "factors": risk_factors[:6],
+            "stress_tests": stress_tests[:3],
+            "confidence": confidence,
+        }
+        return json.dumps(result, ensure_ascii=False)
 
-        # Growth and cash generation
-        if yoy_growth is not None and yoy_growth < 0:
-            risk_points += 1
-            factors.append("Negative YoY revenue growth")
-        if fcf is not None and fcf < 0:
-            risk_points += 1
-            factors.append("Negative free cash flow")
-
-        # Map points to 1-5 score
-        if risk_points <= 1:
-            score = 1
-            label = "Low"
-        elif risk_points == 2:
-            score = 2
-            label = "Moderate-Low"
-        elif risk_points == 3:
-            score = 3
-            label = "Moderate"
-        elif risk_points == 4:
-            score = 4
-            label = "Elevated"
-        else:
-            score = 5
-            label = "High"
-
-        summary = [
-            "Risk Assessment",
-            f"- Risk Score: {score} ({label})",
-        ]
-        if factors:
-            summary.append("- Factors: " + ", ".join(factors))
-
-        return "\n".join(summary)
+    @staticmethod
+    async def create_risk_assessment_tool_async(financial_document_data: Any) -> str:
+        return await asyncio.to_thread(RiskTool.create_risk_assessment_tool, financial_document_data)
 
 
 class CreateRiskAssessmentTool(BaseTool):  # type: ignore
@@ -471,8 +664,11 @@ class CreateRiskAssessmentTool(BaseTool):  # type: ignore
         "Generates a concise risk assessment and score from extracted financial text."
     )
 
-    def _run(self, financial_document_data: str) -> str:  # type: ignore[override]
+    def _run(self, financial_document_data: Any) -> str:  # type: ignore[override]
         return RiskTool.create_risk_assessment_tool(financial_document_data)
+
+    async def _arun(self, financial_document_data: Any) -> str:  # type: ignore[override]
+        return await RiskTool.create_risk_assessment_tool_async(financial_document_data)
 
 risk_assessment_tool = CreateRiskAssessmentTool()
 analyze_investment_tool = AnalyzeInvestmentTool()

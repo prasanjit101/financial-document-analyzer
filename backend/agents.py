@@ -3,7 +3,6 @@ from crewai import Agent, LLM
 from config import settings
 
 from tools import (
-    search_tool,
     read_financial_document_tool,
     analyze_investment_tool,
     risk_assessment_tool,
@@ -13,100 +12,88 @@ from tools import (
 def get_llm(model: str = settings.LLM_MODEL):
     return LLM(
         model=model,
-        )
+    )
 
-# Financial Analyst agent (professional, cautious, evidence-driven)
-financial_analyst = Agent(
-    role="Senior Financial Analyst",
-    goal=(
-        "You are a precise, compliance-aware financial analyst. "
-        "Analyze the provided document(s) and the user's query {query}. "
-        "Extract concrete metrics strictly from tool outputs, attribute claims to the source text, "
-        "and produce a concise, structured, evidence-based analysis. "
-        "Never provide personalized investment advice. If information is missing, say so."
-    ),
-    verbose=True,
-    backstory=(
-        "Experienced analyst focused on clear, compliant, data-driven analysis. "
-        "Strong at reading financial statements, identifying key metrics, and communicating responsibly."
-    ),
-    tools=[
-        search_tool,
-        read_financial_document_tool,
-        analyze_investment_tool,
-        risk_assessment_tool,
-    ],
-    llm=get_llm("gemini/gemini-2.5-pro"),
-    max_iter=3, 
-    max_rpm=30,
-    allow_delegation=True
-)
-
-# Document verifier agent (checks for financial context only)
+# Financial Document Verifier (first line of defense)
 verifier = Agent(
     role="Financial Document Verifier",
     goal=(
-        "Determine whether the file at {file_path} plausibly contains financial context. "
-        "Use tools to extract text and look for financial indicators (e.g., revenue, EBITDA, cash flow, assets, liabilities). "
-        "Avoid over-claiming when signals are weak; when uncertain, state uncertainty explicitly."
+        "Confirm whether {file_path} is a financial document before any further analysis. "
+        "If indicators are absent, clearly state 'non-financial' and instruct the crew to halt downstream steps."
     ),
-    verbose=True,
+    verbose=settings.APP_ENV == "dev",
     backstory=(
-        "Detail-oriented reviewer who filters non-financial documents to save downstream effort."
+        "Meticulous reviewer charged with filtering irrelevant documents so later agents stay focused on valid financial materials."
     ),
     llm=get_llm(),
     tools=[
         read_financial_document_tool,
     ],
-    max_iter=2,
+    cache=True,
+    max_iter=4,
     max_rpm=30,
-    allow_delegation=False
+    allow_delegation=False,
 )
 
 
-# Investment analysis specialist (non-personalized, heuristic-based)
-investment_advisor = Agent(
-    role="Investment Analysis Specialist",
+# Financial Analyst (core metrics extraction)
+financial_analyst = Agent(
+    role="Senior Financial Analyst",
     goal=(
-        "From extracted text, produce a compact, non-personalized investment overview. "
-        "Base all points on detected metrics and transparent heuristics; list assumptions and uncertainties. "
-        "Express any recommendation in broad, informational terms (e.g., Buy/Hold/Sell style) without personalization."
+        "Transform verified financial text into structured metrics, ratios, and trend commentary for the crew. "
+        "Respect verification outcomes—if the verifier flags the document as non-financial, respond with a short termination notice."
     ),
-    verbose=True,
+    verbose=settings.APP_ENV == "dev",
     backstory=(
-        "Provides structured, metrics-driven investment overviews without personalized advice."
+        "Seasoned analyst who converts raw filings into actionable datasets, feeding downstream risk and investment work."
     ),
     llm=get_llm(),
     tools=[
         read_financial_document_tool,
-        analyze_investment_tool,
-        search_tool,
     ],
-    max_iter=2,
+    max_iter=4,
     max_rpm=30,
-    allow_delegation=False
+    allow_delegation=False,
 )
 
 
-# Risk assessment specialist
+# Risk Assessor (leverages analyst output)
 risk_assessor = Agent(
     role="Risk Assessment Specialist",
     goal=(
-        "Generate a concise, reproducible risk assessment grounded in extracted metrics and simple rules-of-thumb. "
-        "Output a numerical risk score and list concrete contributing factors. "
-        "If evidence is insufficient, indicate low confidence instead of guessing."
+        "Digest the financial analyst's structured output and compute an evidence-backed risk profile. "
+        "Use the risk tool to quantify exposure, highlight vulnerabilities, and note stress scenarios."
     ),
-    verbose=True,
+    verbose=settings.APP_ENV == "dev",
     backstory=(
-        "Evaluates leverage, liquidity, profitability, and growth using transparent heuristics."
+        "Pragmatic risk manager skilled at interpreting ratios, liquidity markers, and leverage signals provided by colleagues."
     ),
     llm=get_llm(),
     tools=[
-        read_financial_document_tool,
         risk_assessment_tool,
-        search_tool,
     ],
-    max_iter=2,
+    max_iter=3,
     max_rpm=30,
-    allow_delegation=False
+    allow_delegation=False,
+)
+
+
+# Investment Advisor (final synthesis)
+investment_advisor = Agent(
+    role="Investment Analysis Specialist",
+    goal=(
+        "Fuse verification, financial analysis, and risk outputs into an informational Buy/Hold/Sell style briefing. "
+        "Ensure every claim is traceable to upstream evidence and remain non-personalized."
+    ),
+    verbose=settings.APP_ENV == "dev",
+    backstory=(
+        "Advises stakeholders by translating collective findings into concise investment theses without giving personalized advice."
+    ),
+    llm=get_llm(),
+    tools=[
+        analyze_investment_tool,
+    ],
+    max_iter=3,
+    max_rpm=30,
+    allow_delegation=False,
 )

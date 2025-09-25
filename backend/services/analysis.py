@@ -18,7 +18,7 @@ async def list_analyses(
     current_user: User = Depends(get_current_user),
 ):
     cache_key = f"analyses:list:{current_user.username}:{documentId or ''}:{skip}:{limit}"
-    cached = cache_get_json(cache_key)
+    cached = await cache_get_json(cache_key)
     if cached is not None:
         return {"items": cached}
 
@@ -33,14 +33,14 @@ async def list_analyses(
     for a in items:
         if "_id" in a:
             a["_id"] = str(a["_id"])  # serialize ObjectId
-    cache_set_json(cache_key, items, ttl_seconds=settings.CACHE_TTL_DEFAULT_SECONDS)
+    await cache_set_json(cache_key, items, ttl_seconds=settings.CACHE_TTL_DEFAULT_SECONDS)
     return {"items": items}
 
 
 @analysis_router.get("/{analysis_id}")
 async def get_analysis(analysis_id: str, current_user: User = Depends(get_current_user)):
     cache_key = f"analyses:get:{analysis_id}"
-    cached = cache_get_json(cache_key)
+    cached = await cache_get_json(cache_key)
     if cached is not None:
         return cached
 
@@ -49,5 +49,5 @@ async def get_analysis(analysis_id: str, current_user: User = Depends(get_curren
     if not a or a.get("userId") != current_user.username:
         raise HTTPException(status_code=404, detail="Analysis not found")
     a["_id"] = str(a["_id"])  # serialize
-    cache_set_json(cache_key, a, ttl_seconds=settings.CACHE_TTL_LONG_SECONDS)
+    await cache_set_json(cache_key, a, ttl_seconds=settings.CACHE_TTL_LONG_SECONDS)
     return a

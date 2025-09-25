@@ -13,7 +13,6 @@ from db import get_db
 from repositories import documents as docs_repo
 from repositories import analyses as analyses_repo
 from repositories import audit_logs as audit_repo
-from task import analyze_financial_document as analyze_financial_document_task
 from config import settings
 from crewai import Crew, Process
 from redis_utils import (
@@ -121,7 +120,7 @@ async def analyze_financial_document(
             mime=mime_type,
             uploaded_by=current_user.username,
         )
-        # Enqueue job for background processing
+    # Enqueue job for background processing
         job_id = str(uuid.uuid4())
         payload = {
             "id": job_id,
@@ -130,7 +129,7 @@ async def analyze_financial_document(
             "user_id": current_user.username,
             "document_id": str(doc.get("_id")),
         }
-        enq_id = enqueue_pdf_job(payload)
+        enq_id = await enqueue_pdf_job(payload)
         if not enq_id:
             raise HTTPException(status_code=503, detail="Background queue unavailable. Try again later.")
 
@@ -170,7 +169,7 @@ async def list_documents(
     """List all documents uploaded by the current user."""
     # Try cache first
     cache_key = f"docs:list:{current_user.username}:{skip}:{limit}"
-    cached = cache_get_json(cache_key)
+    cached = await cache_get_json(cache_key)
     if cached is not None:
         return {"items": cached}
 
@@ -180,14 +179,14 @@ async def list_documents(
         if "_id" in d:
             d["_id"] = str(d["_id"])
     # Cache result
-    cache_set_json(cache_key, docs, ttl_seconds=settings.CACHE_TTL_DEFAULT_SECONDS)
+    await cache_set_json(cache_key, docs, ttl_seconds=settings.CACHE_TTL_DEFAULT_SECONDS)
     return {"items": docs}
 
 @router.get("/{document_id}", response_model=DocumentOut)
 async def get_document(document_id: str, current_user: User = Depends(get_current_user)):
     """Get a specific document by ID if owned by the current user."""
     cache_key = f"docs:get:{document_id}"
-    cached = cache_get_json(cache_key)
+    cached = await cache_get_json(cache_key)
     if cached is not None:
         return cached
 
@@ -196,7 +195,7 @@ async def get_document(document_id: str, current_user: User = Depends(get_curren
     if not doc or doc.get("uploadedBy") != current_user.username:
         raise HTTPException(status_code=404, detail="Document not found")
     doc["_id"] = str(doc["_id"])
-    cache_set_json(cache_key, doc, ttl_seconds=settings.CACHE_TTL_LONG_SECONDS)
+    await cache_set_json(cache_key, doc, ttl_seconds=settings.CACHE_TTL_LONG_SECONDS)
     return doc
 
 @router.delete("/{document_id}", response_model=DocumentDeleteResponse)
@@ -210,15 +209,15 @@ async def delete_document(document_id: str, current_user: User = Depends(get_cur
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to delete document")
     # Invalidate cache for this user/doc
-    cache_invalidate_by_pattern(f"docs:list:{current_user.username}:*")
-    cache_invalidate_by_pattern(f"docs:get:{document_id}")
+    await cache_invalidate_by_pattern(f"docs:list:{current_user.username}:*")
+    await cache_invalidate_by_pattern(f"docs:get:{document_id}")
     return {"status": "deleted", "documentId": document_id}
 
 
 @router.get("/jobs/{job_id}", response_model=JobStatusResponse)
 async def get_job(job_id: str, current_user: User = Depends(get_current_user)):
     """Get background job status and result metadata."""
-    meta = get_job_status(job_id)
+    meta = await get_job_status(job_id)
     if not meta:
         raise HTTPException(status_code=404, detail="Job not found")
     # Do not leak other users' metadata; best effort check

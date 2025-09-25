@@ -82,7 +82,7 @@ export function Analysis(props: AnalysisProps = {}) {
   const showResult = jobStatus === "completed" && analysis;
 
   return (
-    <Card>
+    <Card className=" my-2 max-w-2xl mx-auto">
       <CardHeader>
         <CardTitle>{showResult ? "Analysis Result" : "Analyzing document"}</CardTitle>
       </CardHeader>
@@ -99,9 +99,11 @@ export function Analysis(props: AnalysisProps = {}) {
           <div>Finalizing analysis...</div>
         )}
         {showResult && analysis && (
-          <Streamdown>
+          <div>
+            <Streamdown className="whitespace-pre-wrap prose">
             {analysis.summary}
-          </Streamdown>
+            </Streamdown>
+          </div>
         )}
         {loadingAnalysis && <div>Loading analysis...</div>}
         <Button onClick={() => (props.onBack ? props.onBack() : navigate(-1))} variant="secondary" style={{ marginTop: '1rem' }}>Back</Button>
