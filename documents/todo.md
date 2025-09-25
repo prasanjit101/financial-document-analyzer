@@ -1,5 +1,5 @@
 <!-- - frontend implementation -->
-- authentication session persistence
+<!-- - authentication session persistence -->
 - docker, nginx setup
 
 # Fixes needed

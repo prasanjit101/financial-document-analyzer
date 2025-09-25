@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: financial_analyzer
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017
+      - REDIS_URL=redis://redis:6379/0
+      - APP_ENV=prod
+    depends_on:
+      - mongodb
+      - redis
+    volumes:
+      - ./data:/app/data  # For uploaded files
+    deploy:
+      replicas: 3
+
+  nginx-lb:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx-lb.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - backend
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    ports:
+      - "8001:8001"
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017
+      - REDIS_URL=redis://redis:6379/0
+      - APP_ENV=prod
+    depends_on:
+      - mongodb
+      - redis
+    volumes:
+      - ./data:/app/data  # For processing files
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - nginx-lb
+
+volumes:
+  mongodb_data:
+  redis_data:
